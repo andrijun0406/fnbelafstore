@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1:3306
--- Generation Time: Nov 22, 2025 at 10:29 PM
+-- Generation Time: Nov 22, 2025 at 11:04 PM
 -- Server version: 11.8.3-MariaDB-log
 -- PHP Version: 7.2.34
 
@@ -92,16 +92,38 @@ INSERT INTO `stok_akhir` (`id`, `stok_id`, `jumlah_sisa`) VALUES
 CREATE TABLE `supplier` (
   `id` int(11) NOT NULL,
   `nama` varchar(100) NOT NULL,
-  `handphone` varchar(20) NOT NULL
+  `handphone` varchar(20) NOT NULL,
+  `user_id` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `supplier`
 --
 
-INSERT INTO `supplier` (`id`, `nama`, `handphone`) VALUES
-(1, 'Devi Octavia', '08131234567890'),
-(2, 'Aabir', '081288914980');
+INSERT INTO `supplier` (`id`, `nama`, `handphone`, `user_id`) VALUES
+(1, 'Devi Octavia', '08131234567890', NULL),
+(2, 'Aabir', '081288914980', NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `users`
+--
+
+CREATE TABLE `users` (
+  `id` int(11) NOT NULL,
+  `username` varchar(50) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `role` enum('admin','supplier') NOT NULL DEFAULT 'supplier',
+  `created_at` timestamp NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `users`
+--
+
+INSERT INTO `users` (`id`, `username`, `password`, `role`, `created_at`) VALUES
+(1, 'admin', '$2y$10$wHqz9k8uJHqvP7X9k8uJHqvP7X9k8uJHqvP7X9k8uJHqvP7X9k8uJHq', 'admin', '2025-11-22 22:58:14');
 
 --
 -- Indexes for dumped tables
@@ -132,7 +154,15 @@ ALTER TABLE `stok_akhir`
 -- Indexes for table `supplier`
 --
 ALTER TABLE `supplier`
-  ADD PRIMARY KEY (`id`);
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `user_id` (`user_id`);
+
+--
+-- Indexes for table `users`
+--
+ALTER TABLE `users`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `username` (`username`);
 
 --
 -- AUTO_INCREMENT for dumped tables
@@ -163,6 +193,12 @@ ALTER TABLE `supplier`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
+-- AUTO_INCREMENT for table `users`
+--
+ALTER TABLE `users`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
 -- Constraints for dumped tables
 --
 
@@ -183,6 +219,12 @@ ALTER TABLE `stok`
 --
 ALTER TABLE `stok_akhir`
   ADD CONSTRAINT `stok_akhir_ibfk_1` FOREIGN KEY (`stok_id`) REFERENCES `stok` (`id`);
+
+--
+-- Constraints for table `supplier`
+--
+ALTER TABLE `supplier`
+  ADD CONSTRAINT `fk_user_supplier` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`);
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
