@@ -1,12 +1,28 @@
 <?php
 declare(strict_types=1);
 
+// Debug sementara (MATIKAN di production)
+error_reporting(E_ALL);
+ini_set('display_errors', '1');
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+
+// Mulai sesi lebih awal
+if (session_status() !== PHP_SESSION_ACTIVE) {
+  session_start();
+}
+
 include_once __DIR__ . '/../includes/auth.php';
-checkRole('admin'); // admin bisa kelola supplier & buat user supplier
+if (function_exists('requireRole')) {
+  requireRole('admin'); // admin bisa kelola supplier & buat user supplier
+} else {
+  checkRole('admin');
+}
 
 require_once __DIR__ . '/../includes/koneksi.php';
 
-session_start();
+// Muat partial navbar admin konsisten
+include_once __DIR__ . '/../includes/navbar_admin.php';
+
 if (empty($_SESSION['csrf_token'])) {
   $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
@@ -82,7 +98,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $id = post('id');
       if (ctype_digit($id)) {
         // Pastikan tidak terkait ke produk jika ingin membatasi
-        // Contoh: cek ada produk terkait
         $stmtC = $conn->prepare("SELECT COUNT(*) AS c FROM produk WHERE supplier_id = ?");
         $stmtC->bind_param("i", $id);
         $stmtC->execute();
@@ -152,22 +167,8 @@ $supplier_users = $conn->query("SELECT id, username FROM users WHERE role = 'sup
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
 </head>
 <body class="bg-light">
-<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="dashboard.php">F &amp; B ELAF Store</a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#topNav">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="topNav">
-      <ul class="navbar-nav me-auto">
-        <li class="nav-item"><a class="nav-link" href="manage_users.php">Manage Users</a></li>
-        <li class="nav-item"><a class="nav-link active" href="manage_suppliers.php">Manage Suppliers</a></li>
-        <li class="nav-item"><a class="nav-link" href="../index.php">View Products</a></li>
-      </ul>
-      <a class="btn btn-outline-light btn-sm" href="../logout.php">Logout</a>
-    </div>
-  </div>
-</nav>
+
+<?php render_admin_navbar(); ?>
 
 <main class="container py-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
@@ -358,7 +359,7 @@ $supplier_users = $conn->query("SELECT id, username FROM users WHERE role = 'sup
             </div>
             <div class="col-12">
               <div class="alert alert-info">
-                Username harus unik, sesuai constraint di tabel users. :llmCitationRef[7]
+                Username harus unik, sesuai constraint di tabel users.
               </div>
             </div>
           </div>
@@ -371,6 +372,12 @@ $supplier_users = $conn->query("SELECT id, username FROM users WHERE role = 'sup
     </div></div>
   </div>
 </main>
+
+<footer class="border-top mt-4">
+  <div class="container py-3">
+    <small class="text-muted">&copy; <?= date('Y'); ?> F &amp; B ELAF Store</small>
+  </div>
+</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
