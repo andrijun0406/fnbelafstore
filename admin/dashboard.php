@@ -39,13 +39,13 @@ checkRole('admin');
     <section>
         <h3>Kelola Users</h3>
         <p>Tambah, edit, dan hapus akun pengguna (Admin &amp; Supplier).</p>
-        <p>manage_users.phpBuka halaman Manage Users</a></p>
+        <p><a href="manage_users.php">Buka halaman Manage Users</a></p>
     </section>
 
     <section>
         <h3>Kelola Suppliers</h3>
         <p>Tambah, edit, dan hubungkan supplier dengan akun login.</p>
-        <p>manage_suppliers.phpBuka halaman Manage Suppliers</a></p>
+        <p><a href="manage_suppliers.php">Buka halaman Manage Suppliers</a></p>
     </section>
 </main>
 
