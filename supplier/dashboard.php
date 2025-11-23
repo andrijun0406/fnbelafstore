@@ -1,122 +1,71 @@
 <?php
 declare(strict_types=1);
 
-include_once __DIR__ . '/../includes/auth.php';
-checkRole('supplier'); // hanya supplier
+/**
+ * Supplier Dashboard
+ * - Hanya untuk role supplier
+ * - Reset password sendiri (verifikasi password saat ini)
+ * - Ringkasan & pratinjau produk terbaru (CRUD lengkap ada di supplier/manage_produk.php)
+ */
+
+// Debug mode (hidupkan saat development, matikan di production)
+define('DEBUG_MODE', true);
+if (DEBUG_MODE) {
+  error_reporting(E_ALL);
+  ini_set('display_errors', '1');
+  mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+}
+
+// Mulai sesi sebelum gunakan auth
+if (session_status() !== PHP_SESSION_ACTIVE) {
+  session_start();
+}
+
+// Auth & koneksi
+require_once __DIR__ . '/../includes/auth.php';
+if (function_exists('requireRole')) {
+  requireRole('supplier'); // versi auth baru
+} else {
+  checkRole('supplier');   // fallback ke versi auth lama
+}
 require_once __DIR__ . '/../includes/koneksi.php';
 
-session_start();
+// CSRF token
 if (empty($_SESSION['csrf_token'])) {
   $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-$user_id = (int)($_SESSION['user_id'] ?? 0);
-
-// Cari supplier yang tertaut ke user ini
-$stmtSup = $conn->prepare("SELECT id, nama FROM supplier WHERE user_id = ? LIMIT 1");
-$stmtSup->bind_param("i", $user_id);
-$stmtSup->execute();
-$resSup = $stmtSup->get_result();
-$supplier = $resSup->fetch_assoc();
-$stmtSup->close();
+// Helpers
+function post($k, $d = '') { return isset($_POST[$k]) ? trim($_POST[$k]) : $d; }
+function current_user_id(): int { return isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0; }
 
 $flash = null;
-function post($k,$d=''){ return isset($_POST[$k]) ? trim($_POST[$k]) : $d; }
+$user_id = current_user_id();
 
-// Tangani aksi form
+// Ambil supplier tertaut ke user ini
+$supplier = null;
+if ($user_id > 0) {
+  $stmtSup = $conn->prepare("SELECT id, nama FROM supplier WHERE user_id = ? LIMIT 1");
+  $stmtSup->bind_param("i", $user_id);
+  $stmtSup->execute();
+  $supplier = $stmtSup->get_result()->fetch_assoc();
+  $stmtSup->close();
+}
+
+// Tangani aksi reset password
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $csrf = post('csrf_token');
   if (!hash_equals($_SESSION['csrf_token'], $csrf)) {
-    $flash = ['type'=>'danger','msg'=>'Sesi tidak valid, silakan muat ulang.'];
-  } elseif (!$supplier) {
-    $flash = ['type'=>'danger','msg'=>'Akun supplier belum ditautkan. Hubungi admin.'];
+    $flash = ['type' => 'danger', 'msg' => 'Sesi tidak valid, silakan muat ulang.'];
   } else {
-    $supplier_id = (int)$supplier['id'];
     $action = post('action');
-
-    if ($action === 'create_produk') {
-      $nama = post('nama');
-      $jenis = post('jenis');
-      $harga_supplier = post('harga_supplier');
-      $margin_fnb = post('margin_fnb');
-
-      if ($nama === '' || !in_array($jenis, ['kudapan','minuman'], true)) {
-        $flash = ['type'=>'danger','msg'=>'Nama/jenis tidak valid.'];
-      } elseif (!is_numeric($harga_supplier) || !is_numeric($margin_fnb)) {
-        $flash = ['type'=>'danger','msg'=>'Harga dan margin harus numerik.'];
-      } else {
-        $hs = (float)$harga_supplier;
-        $mf = (float)$margin_fnb;
-        $stmt = $conn->prepare("INSERT INTO produk (nama, jenis, harga_supplier, margin_fnb, supplier_id) VALUES (?, ?, ?, ?, ?)");
-        $stmt->bind_param("ssddi", $nama, $jenis, $hs, $mf, $supplier_id);
-        if ($stmt->execute()) {
-          $flash = ['type'=>'success','msg'=>'Produk berhasil ditambahkan.'];
-        } else {
-          $flash = ['type'=>'danger','msg'=>'Gagal menambah produk: ' . htmlspecialchars($stmt->error)];
-        }
-        $stmt->close();
-      }
-    } elseif ($action === 'update_produk') {
-      $id = post('id');
-      $nama = post('nama');
-      $jenis = post('jenis');
-      $harga_supplier = post('harga_supplier');
-      $margin_fnb = post('margin_fnb');
-
-      if (!ctype_digit($id)) {
-        $flash = ['type'=>'danger','msg'=>'ID produk tidak valid.'];
-      } elseif ($nama === '' || !in_array($jenis, ['kudapan','minuman'], true)) {
-        $flash = ['type'=>'danger','msg'=>'Nama/jenis tidak valid.'];
-      } elseif (!is_numeric($harga_supplier) || !is_numeric($margin_fnb)) {
-        $flash = ['type'=>'danger','msg'=>'Harga dan margin harus numerik.'];
-      } else {
-        $pid = (int)$id;
-        $hs = (float)$harga_supplier;
-        $mf = (float)$margin_fnb;
-        // Pastikan hanya update produk milik supplier ini
-        $stmt = $conn->prepare("UPDATE produk SET nama = ?, jenis = ?, harga_supplier = ?, margin_fnb = ? WHERE id = ? AND supplier_id = ?");
-        $stmt->bind_param("ssddii", $nama, $jenis, $hs, $mf, $pid, $supplier_id);
-        $stmt->execute();
-        if ($stmt->affected_rows > 0) {
-          $flash = ['type'=>'success','msg'=>'Produk diperbarui.'];
-        } else {
-          $flash = ['type'=>'warning','msg'=>'Tidak ada perubahan atau produk bukan milik Anda.'];
-        }
-        $stmt->close();
-      }
-    } elseif ($action === 'delete_produk') {
-      $id = post('id');
-      if (!ctype_digit($id)) {
-        $flash = ['type'=>'danger','msg'=>'ID produk tidak valid.'];
-      } else {
-        $pid = (int)$id;
-        // Cek stok terkait; jika ada, cegah delete
-        $stmtC = $conn->prepare("SELECT COUNT(*) AS c FROM stok WHERE produk_id = ?");
-        $stmtC->bind_param("i", $pid);
-        $stmtC->execute();
-        $resC = $stmtC->get_result()->fetch_assoc();
-        $stmtC->close();
-
-        if (($resC['c'] ?? 0) > 0) {
-          $flash = ['type'=>'danger','msg'=>'Tidak dapat menghapus: ada stok terkait produk ini.'];
-        } else {
-          $stmt = $conn->prepare("DELETE FROM produk WHERE id = ? AND supplier_id = ?");
-          $stmt->bind_param("ii", $pid, $supplier_id);
-          if ($stmt->execute() && $stmt->affected_rows > 0) {
-            $flash = ['type'=>'success','msg'=>'Produk dihapus.'];
-          } else {
-            $flash = ['type'=>'danger','msg'=>'Gagal menghapus produk.'];
-          }
-          $stmt->close();
-        }
-      }
-    } elseif ($action === 'reset_password') {
+    if ($action === 'reset_password') {
       $current = post('current_password');
       $newpass = post('new_password');
       $confirm = post('confirm_password');
 
       if ($newpass === '' || $confirm === '' || $newpass !== $confirm) {
-        $flash = ['type'=>'danger','msg'=>'Password baru dan konfirmasi harus diisi dan sama.'];
+        $flash = ['type' => 'danger', 'msg' => 'Password baru dan konfirmasi harus diisi dan sama.'];
       } else {
         // Ambil hash password user sekarang
         $stmtU = $conn->prepare("SELECT password FROM users WHERE id = ? LIMIT 1");
@@ -126,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmtU->close();
 
         if (!$resU || !password_verify($current, $resU['password'])) {
-          $flash = ['type'=>'danger','msg'=>'Password saat ini tidak sesuai.'];
+          $flash = ['type' => 'danger', 'msg' => 'Password saat ini tidak sesuai.'];
         } else {
           $hash = password_hash($newpass, PASSWORD_BCRYPT);
           $stmtUp = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
@@ -134,28 +83,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $stmtUp->execute();
           $stmtUp->close();
           session_regenerate_id(true);
-          $flash = ['type'=>'success','msg'=>'Password berhasil diperbarui.'];
+          $flash = ['type' => 'success', 'msg' => 'Password berhasil diperbarui.'];
         }
       }
     }
   }
 }
 
-// Jika supplier belum tertaut, tampilkan pesan dan hentikan
+// Data ringkasan & pratinjau produk
+$products = [];
+$total_products = 0;
 if ($supplier) {
-  // Ambil produk milik supplier ini
+  // Hitung total produk supplier
+  $stmtCnt = $conn->prepare("SELECT COUNT(*) AS c FROM produk WHERE supplier_id = ?");
+  $stmtCnt->bind_param("i", (int)$supplier['id']);
+  $stmtCnt->execute();
+  $total_products = (int)$stmtCnt->get_result()->fetch_assoc()['c'];
+  $stmtCnt->close();
+
+  // Ambil 5 produk terbaru
   $stmtP = $conn->prepare("
     SELECT id, nama, jenis, harga_supplier, margin_fnb, harga_jual
     FROM produk
     WHERE supplier_id = ?
     ORDER BY id DESC
+    LIMIT 5
   ");
   $stmtP->bind_param("i", (int)$supplier['id']);
   $stmtP->execute();
   $products = $stmtP->get_result()->fetch_all(MYSQLI_ASSOC);
   $stmtP->close();
-} else {
-  $products = [];
 }
 ?>
 <!doctype html>
@@ -166,18 +123,22 @@ if ($supplier) {
     <title>Supplier Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+      .stat-card .card-body { display: flex; align-items: center; justify-content: space-between; }
+    </style>
   </head>
   <body class="bg-light">
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
       <div class="container-fluid">
-        <a class="navbar-brand" href="#">FnBelaf Store Supplier</a>
+        <a class="navbar-brand" href="#">F &amp; B Elaf Store Supplier</a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#topNav">
           <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="topNav">
           <ul class="navbar-nav me-auto">
             <li class="nav-item"><a class="nav-link active" href="dashboard.php">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link" href="manage_produk.php">Manage Produk</a></li>
           </ul>
           <a class="btn btn-outline-light btn-sm" href="../logout.php"><i class="bi bi-box-arrow-right me-1"></i> Logout</a>
         </div>
@@ -194,17 +155,34 @@ if ($supplier) {
           Akun Anda belum ditautkan ke data supplier. Mohon hubungi admin untuk penautan agar dapat mengelola produk.
         </div>
       <?php else: ?>
+        <!-- Header -->
         <div class="d-flex justify-content-between align-items-center mb-3">
           <div>
             <h1 class="h4 mb-0">Halo, <?= htmlspecialchars($supplier['nama']) ?></h1>
-            <small class="text-muted">Kelola produk Anda di sini.</small>
+            <small class="text-muted">Ringkasan dan pengaturan akun.</small>
           </div>
-          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createProdukModal">
-            <i class="bi bi-plus-circle"></i> Tambah Produk
-          </button>
+          <div class="btn-group">
+            <a class="btn btn-primary" href="manage_produk.php"><i class="bi bi-box-seam me-1"></i> Kelola Produk</a>
+          </div>
         </div>
 
-        <!-- Reset Password Card -->
+        <!-- Ringkasan -->
+        <div class="row g-3 mb-4">
+          <div class="col-12 col-md-6 col-xl-3">
+            <div class="card stat-card shadow-sm">
+              <div class="card-body">
+                <div>
+                  <h6 class="text-muted mb-1">Total Produk</h6>
+                  <h4 class="mb-0"><?= number_format($total_products) ?></h4>
+                </div>
+                <i class="bi bi-bag text-primary fs-2"></i>
+              </div>
+            </div>
+          </div>
+          <!-- Ruang untuk metrik lain (mis. penjualan harian) akan ditambahkan kemudian -->
+        </div>
+
+        <!-- Keamanan Akun: Reset Password -->
         <div class="card shadow-sm mb-4">
           <div class="card-header">Keamanan Akun</div>
           <div class="card-body">
@@ -236,8 +214,14 @@ if ($supplier) {
           </div>
         </div>
 
-        <!-- Daftar Produk -->
+        <!-- Pratinjau Produk Terbaru -->
         <div class="card shadow-sm">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span class="fw-semibold">Produk Terbaru</span>
+            <a class="btn btn-sm btn-outline-primary" href="manage_produk.php">
+              <i class="bi bi-pencil-square me-1"></i> Kelola
+            </a>
+          </div>
           <div class="card-body p-0">
             <div class="table-responsive">
               <table class="table table-striped table-hover mb-0 align-middle">
@@ -249,11 +233,12 @@ if ($supplier) {
                     <th class="text-end">Harga Supplier</th>
                     <th class="text-end">Margin FnB</th>
                     <th class="text-end">Harga Jual</th>
-                    <th class="text-end">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <?php foreach ($products as $p): ?>
+                  <?php if (empty($products)): ?>
+                    <tr><td colspan="6" class="text-center text-muted py-4">Belum ada produk. Mulai tambah di halaman Kelola Produk.</td></tr>
+                  <?php else: foreach ($products as $p): ?>
                     <tr>
                       <td><?= $p['id'] ?></td>
                       <td><?= htmlspecialchars($p['nama']) ?></td>
@@ -261,144 +246,12 @@ if ($supplier) {
                       <td class="text-end">Rp <?= number_format((float)$p['harga_supplier'], 2, ',', '.') ?></td>
                       <td class="text-end">Rp <?= number_format((float)$p['margin_fnb'], 2, ',', '.') ?></td>
                       <td class="text-end">Rp <?= number_format((float)$p['harga_jual'], 2, ',', '.') ?></td>
-                      <td class="text-end">
-                        <div class="btn-group btn-group-sm">
-                          <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editProdukModal<?= $p['id'] ?>">Edit</button>
-                          <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteProdukModal<?= $p['id'] ?>">Delete</button>
-                        </div>
-                      </td>
                     </tr>
-
-                    <!-- Edit Produk Modal -->
-                    <div class="modal fade" id="editProdukModal<?= $p['id'] ?>" tabindex="-1" aria-hidden="true">
-                      <div class="modal-dialog"><div class="modal-content">
-                        <form method="post">
-                          <div class="modal-header">
-                            <h5 class="modal-title">Edit Produk</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                          </div>
-                          <div class="modal-body">
-                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                            <input type="hidden" name="action" value="update_produk">
-                            <input type="hidden" name="id" value="<?= $p['id'] ?>">
-
-                            <div class="form-floating mb-3">
-                              <input type="text" class="form-control" id="nama<?= $p['id'] ?>" name="nama" value="<?= htmlspecialchars($p['nama']) ?>" required>
-                              <label for="nama<?= $p['id'] ?>">Nama</label>
-                            </div>
-
-                            <div class="mb-3">
-                              <label class="form-label">Jenis</label>
-                              <select class="form-select" name="jenis" required>
-                                <option value="kudapan" <?= $p['jenis']==='kudapan'?'selected':'' ?>>Kudapan</option>
-                                <option value="minuman" <?= $p['jenis']==='minuman'?'selected':'' ?>>Minuman</option>
-                              </select>
-                            </div>
-
-                            <div class="row g-3">
-                              <div class="col-md-6">
-                                <div class="form-floating">
-                                  <input type="number" step="0.01" class="form-control" id="hs<?= $p['id'] ?>" name="harga_supplier" value="<?= htmlspecialchars((string)$p['harga_supplier']) ?>" required>
-                                  <label for="hs<?= $p['id'] ?>">Harga Supplier</label>
-                                </div>
-                              </div>
-                              <div class="col-md-6">
-                                <div class="form-floating">
-                                  <input type="number" step="0.01" class="form-control" id="mf<?= $p['id'] ?>" name="margin_fnb" value="<?= htmlspecialchars((string)$p['margin_fnb']) ?>" required>
-                                  <label for="mf<?= $p['id'] ?>">Margin FnB</label>
-                                </div>
-                              </div>
-                            </div>
-                            <div class="form-text mt-2">
-                              Harga jual dihitung otomatis dari harga supplier + margin FnB (kolom generated). :llmCitationRef[3]
-                            </div>
-                          </div>
-                          <div class="modal-footer">
-                            <button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                            <button class="btn btn-primary" type="submit">Simpan</button>
-                          </div>
-                        </form>
-                      </div></div>
-                    </div>
-
-                    <!-- Delete Produk Modal -->
-                    <div class="modal fade" id="deleteProdukModal<?= $p['id'] ?>" tabindex="-1" aria-hidden="true">
-                      <div class="modal-dialog"><div class="modal-content">
-                        <form method="post">
-                          <div class="modal-header">
-                            <h5 class="modal-title">Hapus Produk</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                          </div>
-                          <div class="modal-body">
-                            <p class="mb-2">Tindakan ini tidak dapat dibatalkan. Jika ada stok terkait, penghapusan akan ditolak.</p>
-                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                            <input type="hidden" name="action" value="delete_produk">
-                            <input type="hidden" name="id" value="<?= $p['id'] ?>">
-                          </div>
-                          <div class="modal-footer">
-                            <button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                            <button class="btn btn-danger" type="submit">Hapus</button>
-                          </div>
-                        </form>
-                      </div></div>
-                    </div>
-
-                  <?php endforeach; ?>
+                  <?php endforeach; endif; ?>
                 </tbody>
               </table>
             </div>
           </div>
-        </div>
-
-        <!-- Create Produk Modal -->
-        <div class="modal fade" id="createProdukModal" tabindex="-1" aria-hidden="true">
-          <div class="modal-dialog modal-lg"><div class="modal-content">
-            <form method="post">
-              <div class="modal-header">
-                <h5 class="modal-title">Tambah Produk</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-              </div>
-              <div class="modal-body">
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                <input type="hidden" name="action" value="create_produk">
-
-                <div class="row g-3">
-                  <div class="col-md-6">
-                    <div class="form-floating">
-                      <input type="text" class="form-control" id="namaBaru" name="nama" placeholder="Nama produk" required>
-                      <label for="namaBaru">Nama produk</label>
-                    </div>
-                  </div>
-                  <div class="col-md-6">
-                    <label class="form-label">Jenis</label>
-                    <select class="form-select" name="jenis" required>
-                      <option value="kudapan">Kudapan</option>
-                      <option value="minuman">Minuman</option>
-                    </select>
-                  </div>
-                  <div class="col-md-6">
-                    <div class="form-floating">
-                      <input type="number" step="0.01" class="form-control" id="hsBaru" name="harga_supplier" placeholder="Harga supplier" required>
-                      <label for="hsBaru">Harga supplier</label>
-                    </div>
-                  </div>
-                  <div class="col-md-6">
-                    <div class="form-floating">
-                      <input type="number" step="0.01" class="form-control" id="mfBaru" name="margin_fnb" placeholder="Margin FnB" required>
-                      <label for="mfBaru">Margin FnB</label>
-                    </div>
-                  </div>
-                </div>
-                <div class="form-text mt-2">
-                  Harga jual akan otomatis tersimpan sebagai penjumlahan harga supplier + margin FnB (kolom generated). :llmCitationRef[4]
-                </div>
-              </div>
-              <div class="modal-footer">
-                <button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                <button class="btn btn-primary" type="submit">Simpan</button>
-              </div>
-            </form>
-          </div></div>
         </div>
       <?php endif; ?>
     </main>
