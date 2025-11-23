@@ -102,7 +102,7 @@ if (function_exists('requireRole')) {
           <div class="card shadow-sm h-100">
             <div class="card-body">
               <h5 class="card-title">Kelola Produk</h5>
-              <p class="card-text">CRUD produk untuk supplier mana pun, termasuk yang belum punya user.</p>
+              <p class="card-text">Kelola produk untuk supplier mana pun, termasuk yang belum punya user.</p>
               <a href="manage_produk.php" class="btn btn-primary"><i class="bi bi-clipboard-data me-1"></i> Buka Manage Produk</a>
             </div>
           </div>
