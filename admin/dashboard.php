@@ -1,11 +1,20 @@
 <?php
-// Gunakan path absolut yang aman:
+declare(strict_types=1);
+
+// Debug sementara (MATIKAN di production)
+error_reporting(E_ALL);
+ini_set('display_errors', '1');
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+
 include_once __DIR__ . '/../includes/auth.php';
 
-// Batasi akses hanya admin
-checkRole('admin');
+// Batasi akses hanya admin (dukung dua gaya)
+if (function_exists('requireRole')) {
+    requireRole('admin');
+} else {
+    checkRole('admin');
+}
 ?>
-
 <!doctype html>
 <html lang="id">
   <head>
@@ -23,9 +32,7 @@ checkRole('admin');
 
     <!-- CSS kustom minimal -->
     <style>
-      :root {
-        --brand-primary: #0d6efd; /* Sesuaikan jika punya warna brand sendiri */
-      }
+      :root { --brand-primary: #0d6efd; }
       body { background-color: #f8f9fa; }
       .navbar-brand { font-weight: 600; }
     </style>
@@ -65,7 +72,6 @@ checkRole('admin');
 
     <!-- Konten -->
     <main class="container py-4">
-      <!-- Judul halaman -->
       <div class="mb-4">
         <h1 class="h3 mb-1">Admin Panel</h1>
         <p class="text-muted mb-0">
@@ -79,12 +85,8 @@ checkRole('admin');
           <div class="card shadow-sm h-100">
             <div class="card-body">
               <h5 class="card-title">Kelola Users</h5>
-              <p class="card-text">
-                Tambah, edit, dan hapus akun pengguna (Admin &amp; Supplier).
-              </p>
-              <a href="manage_users.php" class="btn btn-primary">
-                Buka halaman Manage Users
-              </a>
+              <p class="card-text">Tambah, edit, dan hapus akun pengguna (Admin &amp; Supplier).</p>
+              <a href="manage_users.php" class="btn btn-primary">Buka halaman Manage Users</a>
             </div>
           </div>
         </div>
@@ -94,12 +96,8 @@ checkRole('admin');
           <div class="card shadow-sm h-100">
             <div class="card-body">
               <h5 class="card-title">Kelola Suppliers</h5>
-              <p class="card-text">
-                Tambah, edit, dan hubungkan supplier dengan akun login.
-              </p>
-              <a href="manage_suppliers.php" class="btn btn-primary">
-                Buka halaman Manage Suppliers
-              </a>
+              <p class="card-text">Tambah, edit, dan hubungkan supplier dengan akun login.</p>
+              <a href="manage_suppliers.php" class="btn btn-primary">Buka halaman Manage Suppliers</a>
             </div>
           </div>
         </div>
@@ -113,7 +111,7 @@ checkRole('admin');
       </div>
     </footer>
 
-    <!-- Bootstrap 5 JS Bundle (termasuk Popper) -->
+    <!-- Bootstrap 5 JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   </body>
 </html>

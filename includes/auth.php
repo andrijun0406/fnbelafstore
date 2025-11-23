@@ -1,29 +1,19 @@
 <?php
-// Mulai sesi hanya jika belum aktif
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
-/**
- * Redirect ke halaman login (path absolut dari root)
- */
 function redirectToLogin(): void {
-    header("Location: /login.php");
+    header("Location: /login.php"); // pastikan login.php ada di root
     exit();
 }
 
-/**
- * Wajib login
- */
 function requireLogin(): void {
     if (empty($_SESSION['user_id']) || empty($_SESSION['role'])) {
         redirectToLogin();
     }
 }
 
-/**
- * Wajib role tertentu (mis. 'admin' atau 'supplier')
- */
 function requireRole(string $role): void {
     requireLogin();
     if ($_SESSION['role'] !== $role) {
@@ -31,9 +21,6 @@ function requireRole(string $role): void {
     }
 }
 
-/**
- * Wajib salah satu dari beberapa role
- */
 function requireAnyRole(array $roles): void {
     requireLogin();
     if (!in_array($_SESSION['role'], $roles, true)) {
@@ -41,9 +28,6 @@ function requireAnyRole(array $roles): void {
     }
 }
 
-/**
- * Helpers (opsional)
- */
 function isLoggedIn(): bool {
     return !empty($_SESSION['user_id']) && !empty($_SESSION['role']);
 }
@@ -54,4 +38,11 @@ function currentUserId(): ?int {
 
 function currentUserRole(): ?string {
     return isset($_SESSION['role']) ? (string)$_SESSION['role'] : null;
+}
+
+/* Kompatibilitas mundur untuk file lama */
+if (!function_exists('checkRole')) {
+    function checkRole($role) {
+        requireRole((string)$role);
+    }
 }
