@@ -8,20 +8,27 @@ checkRole('admin');
 <head>
     <meta charset="UTF-8">
     <title>Admin Dashboard</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel!-- Navbar -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@ss/bootstrap.min.css
+</head>
+<body>
+<!-- Navbar -->
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
   <div class="container-fluid">
-    <a class="navbar-brand" href="dashboardn class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+    dashboard.phpAdmin Panel</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
       <span class="navbar-toggler-icon"></span>
     </button>
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav me-auto">
         <li class="nav-item">dashboard.phpHome</a></li>
         <li class="nav-item">manage_users.phpManage Users</a></li>
-        <li class="nav-item"><a class="nav-link" href="manage_sup</a></li>
+        <li class="nav-item"><a class="navers.phpManage Suppliers</a></li>
         <li class="nav-item">../index.phpView Products</a></li>
       </ul>
-      <a href="../logout.php" class="btn btn-outlinenav>
+      ../logout.phpLogout</a>
+    </div>
+  </div>
+</nav>
 
 <!-- Content -->
 <div class="container mt-4">
@@ -46,13 +53,12 @@ checkRole('admin');
                 <div class="card-body text-center">
                     <h5 class="card-title">Kelola Suppliers</h5>
                     <p class="card-text">Tambah, edit, dan hubungkan supplier dengan akun login.</p>
-                    manage_suppliers.phpManage Suppliers</a>
-                </div>
+                    <a href="manage_suppliers.php" class="btn btn            </div>
             </div>
         </div>
     </div>
 </div>
 
-https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@/bootstrap.bundle.min.js</script>
 </body>
 </html>
