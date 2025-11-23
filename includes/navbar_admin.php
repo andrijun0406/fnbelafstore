@@ -22,6 +22,7 @@ if (!function_exists('render_admin_navbar')) {
             <li class="nav-item"><a class="nav-link<?= nav_active('/admin/manage_stok.php') ?>" href="/admin/manage_stok.php">Manage Stok</a></li>
             <li class="nav-item"><a class="nav-link<?= nav_active('/admin/manage_produk.php') ?>" href="/admin/manage_produk.php">Manage Produk</a></li>
             <li class="nav-item"><a class="nav-link<?= nav_active('/index.php') ?>" href="/index.php">View Etalase</a></li>
+            <li class="nav-item"><a class="nav-link<?= nav_active('/admin/reports.php') ?>" href="/admin/reports.php">Laporan</a></li>
           </ul>
           <a class="btn btn-outline-light btn-sm" href="/logout.php"><i class="bi bi-box-arrow-right me-1"></i> Logout</a>
         </div>
