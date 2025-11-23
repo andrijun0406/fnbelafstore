@@ -1,10 +1,22 @@
 <?php
 declare(strict_types=1);
+if (session_status() !== PHP_SESSION_ACTIVE) {
+  session_start();
+}
+
 require_once __DIR__ . '/includes/koneksi.php';
+
+// Deteksi role untuk menentukan navbar
+$role = $_SESSION['role'] ?? null;
+if ($role === 'admin') {
+  include_once __DIR__ . '/includes/navbar_admin.php';
+} elseif ($role === 'supplier') {
+  include_once __DIR__ . '/includes/navbar_supplier.php';
+}
 
 $today = date('Y-m-d');
 
-// Stok hari ini
+// Query stok hari ini
 $stmtToday = $conn->prepare("
   SELECT st.id AS stok_id,
          p.id AS produk_id,
@@ -27,7 +39,7 @@ $stmtToday->execute();
 $stok_today = $stmtToday->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmtToday->close();
 
-// Stok carry-over (belum expired, masih ada sisa)
+// Query stok carry-over (belum expired, masih ada sisa)
 $stmtCarry = $conn->prepare("
   SELECT st.id AS stok_id,
          p.id AS produk_id,
@@ -43,10 +55,10 @@ $stmtCarry = $conn->prepare("
   JOIN produk p ON p.id = st.produk_id
   JOIN supplier s ON s.id = p.supplier_id
   LEFT JOIN stok_akhir sa 
-         ON sa.stok_id = st.id 
-         AND sa.processed_date = (
-           SELECT MAX(sa2.processed_date) FROM stok_akhir sa2 WHERE sa2.stok_id = st.id
-         )
+    ON sa.stok_id = st.id 
+   AND sa.processed_date = (
+     SELECT MAX(sa2.processed_date) FROM stok_akhir sa2 WHERE sa2.stok_id = st.id
+   )
   WHERE CURDATE() < st.expired_at
     AND COALESCE(sa.jumlah_sisa, st.jumlah_masuk) > 0
   ORDER BY st.expired_at ASC, p.nama ASC
@@ -75,20 +87,26 @@ function jenis_badge(string $jenis): string {
     </style>
   </head>
   <body>
-    <!-- Header dengan tombol Login -->
-    <header class="py-3 border-bottom bg-white">
-      <div class="container">
-        <div class="d-flex align-items-center justify-content-between">
-          <div class="brand h5 mb-0">F &amp; B ELAF Store</div>
-          <div class="d-flex align-items-center gap-3">
-            <span class="text-muted small"><?= htmlspecialchars($today) ?></span>
-            <a href="/login.php" class="btn btn-outline-primary btn-sm">
-              <i class="bi bi-box-arrow-in-right me-1"></i> Login
-            </a>
+    <?php if ($role === 'admin'): ?>
+      <?php render_admin_navbar(); ?>
+    <?php elseif ($role === 'supplier'): ?>
+      <?php render_supplier_navbar(); ?>
+    <?php else: ?>
+      <!-- Header publik dengan tombol Login -->
+      <header class="py-3 border-bottom bg-white">
+        <div class="container">
+          <div class="d-flex align-items-center justify-content-between">
+            <div class="brand h5 mb-0">F &amp; B ELAF Store</div>
+            <div class="d-flex align-items-center gap-3">
+              <span class="text-muted small"><?= htmlspecialchars($today) ?></span>
+              <a href="/login.php" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-box-arrow-in-right me-1"></i> Login
+              </a>
+            </div>
           </div>
         </div>
-      </div>
-    </header>
+      </header>
+    <?php endif; ?>
 
     <main class="container py-4">
       <!-- Penjelasan -->
