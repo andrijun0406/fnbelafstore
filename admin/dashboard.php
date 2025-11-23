@@ -1,6 +1,9 @@
 
 <?php
-include '../includes/auth.php';
+// Gunakan path absolut yang aman:
+include_once __DIR__ . '/../includes/auth.php';
+
+// Batasi akses hanya admin
 checkRole('admin');
 ?>
 <!DOCTYPE html>
@@ -8,65 +11,49 @@ checkRole('admin');
 <head>
     <meta charset="UTF-8">
     <title>Admin Dashboard</title>
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/cssin.css
 </head>
 <body>
-<!-- Navbar -->
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-  <div class="container-fluid">
-    <a href="dashboard.php">Admin Panel</a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="navbarNav">
-      <ul class="navbar-nav me-auto">
-        <li class="nav-item">
-            <a href="manage_users.php">Kelola Users</a>
-        </li>
-        <li class="nav-item">
-            <a href="manage_suppliers.php">Kelola Suppliers</a>
-        </li>
-        <li class="nav-item">
-            <a href="../index.php">View Products</a>
-        </li>
-      </ul>
-      <a href="/logout.php">Logout</a>
-    </div>
-  </div>
-</nav>
 
-<!-- Content -->
-<div class="container mt-4">
-    < class="text-center">
-        <h1 class="mb-4">Selamat datang, Admin!</h1>
-        <p class="lead">Gunakan menu di atas untuk mengelola data pengguna dan supplier.</p>
-    </div>
+<!-- Header sederhana -->
+<header>
+    <h1>Admin Panel</h1>
+    <nav>
+        <a href="dashboard.php">Home</a> |
+        <a href="manage_users.php">Manage Users</a> |
+        <a href="manage_suppliers.php">Manage Suppliers</a> |
+        <a href="../index.php">View Products</a> |
+        <a href="../logout.php">Logout</a>
+    </nav>
+    <hr>
+</header>
 
-    <!-- Cards -->
-    <div class="row mt-5">
-        <div class="col-md-6 mb-3">
-            <div class="card shadow-sm">
-                <div class="card-body text-center">
-                    <h5 class="card-title">Kelola Users</h5>
-                    <p class="card-text">Tambah, edit, dan hapus akun pengguna (Admin & Supplier).</p>
-                    manage_users.phpManage Users</a>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6 mb-3">
-            <div class="card shadow-sm">
-                <div class="card-body text-center">
-                    <h5 class="card-title">Kelola Suppliers</h5>
-                    <p class="card-text">Tambah, edit, dan hubungkan supplier dengan akun login.</p>
-                    manage_suppliers.phpManage Suppliers</a>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- Konten -->
+<main>
+    <section>
+        <h2>Selamat datang, Admin!</h2>
+        <p>Gunakan menu di atas untuk mengelola data pengguna dan supplier.</p>
+    </section>
 
-<!-- Bootstrap JS -->
-https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js</script>
+    <hr>
+
+    <section>
+        <h3>Kelola Users</h3>
+        <p>Tambah, edit, dan hapus akun pengguna (Admin &amp; Supplier).</p>
+        <p>manage_users.phpBuka halaman Manage Users</a></p>
+    </section>
+
+    <section>
+        <h3>Kelola Suppliers</h3>
+        <p>Tambah, edit, dan hubungkan supplier dengan akun login.</p>
+        <p>manage_suppliers.phpBuka halaman Manage Suppliers</a></p>
+    </section>
+</main>
+
+<!-- Footer sederhana -->
+<footer>
+    <hr>
+    <small>&copy; <?php echo date('Y'); ?> FnBelaf Store</small>
+</footer>
+
 </body>
 </html>
