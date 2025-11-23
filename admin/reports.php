@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-// Debug sementara
+// Debug sementara (MATIKAN di production)
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
@@ -25,7 +25,11 @@ function get($k,$d=''){ return isset($_GET[$k]) ? trim($_GET[$k]) : $d; }
 $flash = null;
 $today = date('Y-m-d');
 
-// Aksi: tandai pembayaran supplier sebagai paid
+/**
+ * ACTIONS
+ */
+
+// 1) Tandai pembayaran supplier sebagai paid
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'mark_paid') {
   $csrf = post('csrf_token');
   if (!hash_equals($_SESSION['csrf_token'], $csrf)) {
@@ -42,17 +46,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'mark_paid') {
   }
 }
 
-// Aksi: generate payment harian (supplier_profit)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'generate_payment_daily') {
+// 2) Generate payment supplier (Weekly)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'generate_payment_weekly') {
   $csrf = post('csrf_token');
   if (!hash_equals($_SESSION['csrf_token'], $csrf)) {
     $flash = ['type'=>'danger','msg'=>'Sesi tidak valid.'];
   } else {
-    $date = post('date', $today);
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-      $flash = ['type'=>'danger','msg'=>'Tanggal harian tidak valid.'];
+    $ref_date = post('ref_date', $today);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $ref_date)) {
+      $flash = ['type'=>'danger','msg'=>'Tanggal referensi tidak valid.'];
     } else {
-      // Agregasi keuntungan supplier per supplier untuk tanggal harian
+      // Hitung minggu (Senin s.d. Minggu) berdasarkan ref_date
+      $ref = DateTime::createFromFormat('Y-m-d', $ref_date);
+      $start = clone $ref; $start->modify('monday this week');
+      $end   = clone $ref; $end->modify('sunday this week');
+      $week_start = $start->format('Y-m-d');
+      $week_end   = $end->format('Y-m-d'); // disimpan sebagai period_date
+
+      // Agregasi keuntungan supplier per supplier (jumlah_terjual × harga_supplier)
       $stmtAgg = $conn->prepare("
         SELECT s.id AS supplier_id,
                SUM(sa.jumlah_terjual * p.harga_supplier) AS supplier_profit
@@ -60,94 +71,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'generate_paymen
         JOIN stok st ON st.id = sa.stok_id
         JOIN produk p ON p.id = st.produk_id
         JOIN supplier s ON s.id = p.supplier_id
-        WHERE sa.processed_date = ?
+        WHERE sa.processed_date BETWEEN ? AND ?
         GROUP BY s.id
       ");
-      $stmtAgg->bind_param("s", $date);
+      $stmtAgg->bind_param("ss", $week_start, $week_end);
       $stmtAgg->execute();
       $rows = $stmtAgg->get_result()->fetch_all(MYSQLI_ASSOC);
       $stmtAgg->close();
 
-      // Upsert ke supplier_payments (pending)
+      // Upsert ke supplier_payments (status pending)
+      // Pastikan: ALTER TABLE supplier_payments MODIFY period_type ENUM('daily','weekly','monthly') NOT NULL;
+      // Dan kunci unik: ALTER TABLE supplier_payments ADD UNIQUE KEY uniq_supplier_period (supplier_id, period_type, period_date);
       $stmtUpsert = $conn->prepare("
         INSERT INTO supplier_payments (supplier_id, period_type, period_date, amount, status)
-        VALUES (?, 'daily', ?, ?, 'pending')
+        VALUES (?, 'weekly', ?, ?, 'pending')
         ON DUPLICATE KEY UPDATE amount = VALUES(amount), status='pending', paid_at = NULL
       ");
       $count = 0;
       foreach ($rows as $r) {
         $sid = (int)$r['supplier_id'];
         $amt = (float)($r['supplier_profit'] ?? 0);
-        $stmtUpsert->bind_param("isd", $sid, $date, $amt);
+        $stmtUpsert->bind_param("isd", $sid, $week_end, $amt);
         $stmtUpsert->execute();
         $count++;
       }
       $stmtUpsert->close();
-      $flash = ['type'=>'success','msg'=>"Generate payment harian untuk $count supplier pada $date berhasil."];
+
+      $flash = ['type'=>'success','msg'=>"Generate payment mingguan ($week_start s.d. $week_end) untuk $count supplier berhasil."];
     }
   }
 }
 
-// Aksi: generate payment bulanan (supplier_profit)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'generate_payment_monthly') {
+// 3) Clear status pembayaran supplier (hapus catatan payments) untuk go-live
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'clear_supplier_payments') {
   $csrf = post('csrf_token');
   if (!hash_equals($_SESSION['csrf_token'], $csrf)) {
     $flash = ['type'=>'danger','msg'=>'Sesi tidak valid.'];
   } else {
-    $month = (int)post('month', date('n'));
-    $year  = (int)post('year',  date('Y'));
-    if ($month < 1 || $month > 12 || $year < 1970 || $year > 2100) {
-      $flash = ['type'=>'danger','msg'=>'Bulan/tahun tidak valid.'];
+    $confirm = post('confirm_text');          // harus "CLEAR PAY"
+    $before_date = post('before_date');       // opsional YYYY-MM-DD
+    $reset_ai = post('reset_ai');             // 'yes' or ''
+    if ($confirm !== 'CLEAR PAY') {
+      $flash = ['type'=>'danger','msg'=>'Konfirmasi tidak sesuai. Ketik CLEAR PAY untuk melanjutkan.'];
     } else {
-      // Tanggal periode diset ke hari terakhir bulan tsb
-      $periodDateObj = DateTime::createFromFormat('Y-n-j', "$year-$month-1");
-      $periodDateObj->modify('last day of this month');
-      $period_date = $periodDateObj->format('Y-m-d');
-
-      // Agregasi keuntungan supplier per supplier untuk bulan/tahun
-      $stmtAgg = $conn->prepare("
-        SELECT s.id AS supplier_id,
-               SUM(sa.jumlah_terjual * p.harga_supplier) AS supplier_profit
-        FROM stok_akhir sa
-        JOIN stok st ON st.id = sa.stok_id
-        JOIN produk p ON p.id = st.produk_id
-        JOIN supplier s ON s.id = p.supplier_id
-        WHERE MONTH(sa.processed_date) = ? AND YEAR(sa.processed_date) = ?
-        GROUP BY s.id
-      ");
-      $stmtAgg->bind_param("ii", $month, $year);
-      $stmtAgg->execute();
-      $rows = $stmtAgg->get_result()->fetch_all(MYSQLI_ASSOC);
-      $stmtAgg->close();
-
-      // Upsert ke supplier_payments (pending)
-      $stmtUpsert = $conn->prepare("
-        INSERT INTO supplier_payments (supplier_id, period_type, period_date, amount, status)
-        VALUES (?, 'monthly', ?, ?, 'pending')
-        ON DUPLICATE KEY UPDATE amount = VALUES(amount), status='pending', paid_at = NULL
-      ");
-      $count = 0;
-      foreach ($rows as $r) {
-        $sid = (int)$r['supplier_id'];
-        $amt = (float)($r['supplier_profit'] ?? 0);
-        $stmtUpsert->bind_param("isd", $sid, $period_date, $amt);
-        $stmtUpsert->execute();
-        $count++;
+      try {
+        $conn->begin_transaction();
+        if ($before_date !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $before_date)) {
+          $stmtDel = $conn->prepare("DELETE FROM supplier_payments WHERE period_date < ?");
+          $stmtDel->bind_param("s", $before_date);
+          $stmtDel->execute();
+          $stmtDel->close();
+          $scope = "sebelum $before_date";
+        } else {
+          $conn->query("DELETE FROM supplier_payments");
+          $scope = "seluruh";
+        }
+        if ($reset_ai === 'yes') {
+          $conn->query("ALTER TABLE supplier_payments AUTO_INCREMENT = 1");
+        }
+        $conn->commit();
+        $flash = ['type'=>'success','msg'=>"Clear status pembayaran supplier ($scope) berhasil."];
+      } catch (Throwable $e) {
+        $conn->rollback();
+        $flash = ['type'=>'danger','msg'=>'Gagal clear payments: '.htmlspecialchars($e->getMessage())];
       }
-      $stmtUpsert->close();
-      $flash = ['type'=>'success','msg'=>"Generate payment bulanan ($month/$year) untuk $count supplier berhasil."];
     }
   }
 }
 
-// Filters untuk tampilan laporan
+/**
+ * FILTERS untuk tampilan Laporan (Penjualan & Keuntungan)
+ * - Harian & Bulanan tetap ada sesuai kebutuhan sebelumnya
+ */
 $daily_date = get('date', $today);
 $month = (int) get('month', date('n'));
 $year  = (int) get('year',  date('Y'));
 $month = ($month >= 1 && $month <= 12) ? $month : (int)date('n');
 $year  = ($year >= 1970 && $year <= 2100) ? $year : (int)date('Y');
 
-// Daily aggregates
+// Aggregates Harian (Penjualan & Keuntungan)
 $stmtDaily = $conn->prepare("
   SELECT 
     SUM(sa.jumlah_terjual) AS units,
@@ -164,7 +166,7 @@ $stmtDaily->execute();
 $daily = $stmtDaily->get_result()->fetch_assoc();
 $stmtDaily->close();
 
-// Daily per supplier
+// Harian per supplier
 $stmtDailySup = $conn->prepare("
   SELECT s.id AS supplier_id, s.nama AS supplier_nama,
          SUM(sa.jumlah_terjual) AS units,
@@ -184,7 +186,7 @@ $stmtDailySup->execute();
 $daily_suppliers = $stmtDailySup->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmtDailySup->close();
 
-// Monthly aggregates
+// Aggregates Bulanan
 $stmtMonthly = $conn->prepare("
   SELECT 
     SUM(sa.jumlah_terjual) AS units,
@@ -201,7 +203,7 @@ $stmtMonthly->execute();
 $monthly = $stmtMonthly->get_result()->fetch_assoc();
 $stmtMonthly->close();
 
-// Monthly per supplier
+// Bulanan per supplier
 $stmtMonthlySup = $conn->prepare("
   SELECT s.id AS supplier_id, s.nama AS supplier_nama,
          SUM(sa.jumlah_terjual) AS units,
@@ -221,7 +223,7 @@ $stmtMonthlySup->execute();
 $monthly_suppliers = $stmtMonthlySup->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmtMonthlySup->close();
 
-// Pending payments
+// Payments pending
 $pending_payments = $conn->query("
   SELECT sp.id, sp.supplier_id, s.nama AS supplier_nama, sp.period_type, sp.period_date, sp.amount, sp.status
   FROM supplier_payments sp
@@ -250,62 +252,77 @@ $pending_payments = $conn->query("
 
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h1 class="h4 mb-0">Laporan - Admin</h1>
+        <div class="btn-group">
+          <!-- Clear Payments Modal trigger -->
+          <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#clearPaymentsModal">
+            <i class="bi bi-trash3"></i> Clear Pembayaran Supplier
+          </button>
+        </div>
       </div>
 
-      <!-- Generate Payment -->
+      <!-- Generate Payment Weekly -->
       <div class="card shadow-sm mb-3">
-        <div class="card-header">Generate Payment Supplier</div>
+        <div class="card-header">Generate Payment Supplier (Mingguan)</div>
         <div class="card-body">
-          <div class="row g-3">
-            <div class="col-md-6">
-              <form method="post" class="row g-2">
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                <input type="hidden" name="action" value="generate_payment_daily">
-                <div class="col-md-8">
-                  <label class="form-label">Tanggal (Harian)</label>
-                  <input type="date" name="date" value="<?= htmlspecialchars($daily_date) ?>" class="form-control" required>
-                </div>
-                <div class="col-md-4 d-flex align-items-end">
-                  <button class="btn btn-primary w-100" type="submit">
-                    <i class="bi bi-cash-coin me-1"></i> Generate Daily
-                  </button>
-                </div>
-              </form>
+          <form method="post" class="row g-2">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+            <input type="hidden" name="action" value="generate_payment_weekly">
+            <div class="col-md-4">
+              <label class="form-label">Tanggal Referensi Minggu</label>
+              <input type="date" name="ref_date" value="<?= htmlspecialchars($today) ?>" class="form-control" required>
+              <div class="form-text">Minggu dihitung Senin s.d. Minggu berdasarkan tanggal ini.</div>
             </div>
-            <div class="col-md-6">
-              <form method="post" class="row g-2">
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                <input type="hidden" name="action" value="generate_payment_monthly">
-                <div class="col-md-4">
-                  <label class="form-label">Bulan</label>
-                  <select name="month" class="form-select">
-                    <?php for ($m=1;$m<=12;$m++): ?>
-                      <option value="<?= $m ?>" <?= $m===$month?'selected':'' ?>><?= $m ?></option>
-                    <?php endfor; ?>
-                  </select>
-                </div>
-                <div class="col-md-4">
-                  <label class="form-label">Tahun</label>
-                  <input type="number" name="year" value="<?= (int)$year ?>" class="form-control" required>
-                </div>
-                <div class="col-md-4 d-flex align-items-end">
-                  <button class="btn btn-primary w-100" type="submit">
-                    <i class="bi bi-calendar2-check me-1"></i> Generate Monthly
-                  </button>
-                </div>
-              </form>
+            <div class="col-md-2 d-flex align-items-end">
+              <button class="btn btn-primary" type="submit">
+                <i class="bi bi-cash-coin me-1"></i> Generate Weekly
+              </button>
             </div>
-          </div>
+          </form>
           <div class="form-text mt-2">
-            Generate akan membuat/menimpa catatan pembayaran supplier (status pending) berdasarkan keuntungan supplier dari stok_akhir (jumlah_terjual × harga_supplier).<br>
-            Gunakan tombol “Mark as Paid” di tabel pending bila pembayaran sudah dilakukan.
+            Nilai pembayaran = Σ (jumlah_terjual × harga_supplier) per supplier selama minggu tersebut. :llmCitationRef[1]
           </div>
         </div>
       </div>
 
-      <!-- Laporan Harian -->
+      <!-- Modal Clear Pembayaran Supplier -->
+      <div class="modal fade" id="clearPaymentsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog"><div class="modal-content">
+          <form method="post">
+            <div class="modal-header">
+              <h5 class="modal-title">Clear Status Pembayaran Supplier</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+              <input type="hidden" name="action" value="clear_supplier_payments">
+              <div class="alert alert-warning">
+                Tindakan ini akan menghapus catatan pembayaran supplier (pending/paid). Gunakan hanya untuk reset perhitungan saat go-live.
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Hapus sebelum tanggal (opsional)</label>
+                <input type="date" name="before_date" class="form-control">
+                <div class="form-text">Kosongkan untuk menghapus seluruh catatan pembayaran.</div>
+              </div>
+              <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" value="yes" id="resetAi" name="reset_ai">
+                <label class="form-check-label" for="resetAi">Reset AUTO_INCREMENT setelah hapus</label>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Ketik CLEAR PAY untuk konfirmasi</label>
+                <input type="text" name="confirm_text" class="form-control" placeholder="CLEAR PAY" required>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+              <button class="btn btn-danger" type="submit">Hapus</button>
+            </div>
+          </form>
+        </div></div>
+      </div>
+
+      <!-- Laporan Harian (Penjualan/Keuntungan) -->
       <div class="card shadow-sm mb-3">
-        <div class="card-header">Laporan Harian</div>
+        <div class="card-header">Laporan Harian (Penjualan & Keuntungan)</div>
         <div class="card-body">
           <form class="row g-3" method="get">
             <div class="col-md-4">
@@ -373,9 +390,9 @@ $pending_payments = $conn->query("
         </div>
       </div>
 
-      <!-- Laporan Bulanan -->
+      <!-- Laporan Bulanan (Penjualan/Keuntungan) -->
       <div class="card shadow-sm mb-3">
-        <div class="card-header">Laporan Bulanan</div>
+        <div class="card-header">Laporan Bulanan (Penjualan & Keuntungan)</div>
         <div class="card-body">
           <form class="row g-3" method="get">
             <div class="col-md-2">
@@ -461,7 +478,7 @@ $pending_payments = $conn->query("
                 <tr>
                   <th>Supplier</th>
                   <th>Periode</th>
-                  <th>Tanggal</th>
+                  <th>Tanggal (Akhir Periode)</th>
                   <th class="text-end">Jumlah</th>
                   <th>Status</th>
                   <th class="text-end">Aksi</th>
