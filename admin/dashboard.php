@@ -15,14 +15,12 @@ checkRole('admin');
 <!-- Navbar -->
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
   <div class="container-fluid">
-    dashboard.phpAdmin Panel</a>
+    <a href="dashboard.php">Admin Panel</a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
       <span class="navbar-toggler-icon"></span>
     </button>
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav me-auto">
-        <li class="nav-item">
-            <a class="nav-link active" href="i>
         <li class="nav-item">
             <a href="manage_users.php">Kelola Users</a>
         </li>
