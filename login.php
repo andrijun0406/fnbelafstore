@@ -89,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <div class="card shadow-sm login-card">
         <div class="card-body p-4">
           <div class="text-center mb-4">
-            <div class="brand h5 mb-1">FnBelaf Store</div>
+            <div class="brand h5 mb-1">F &amp; B ELAF Store</div>
             <div class="text-muted">Masuk ke akun Anda</div>
           </div>
 
