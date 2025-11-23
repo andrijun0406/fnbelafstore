@@ -2,16 +2,20 @@
 declare(strict_types=1);
 
 /**
- * Admin - Manage Produk
- * - CRUD produk untuk supplier mana pun (termasuk supplier tanpa user)
- * - Harga_jual adalah kolom generated dari harga_supplier + margin_fnb (tidak diinput manual)
- * - Cegah delete jika ada stok terkait (stok.produk_id mereferensikan produk.id)
+ * Admin - Manage Stok
+ * Fitur:
+ * - Input stok masuk (produk, tanggal_masuk, jumlah_masuk, opsi override shelf_life_days)
+ * - Daftar stok hari ini dan stok aktif (carry-over sebelum expired)
+ * - Pencatatan stok akhir harian (jumlah_sisa, status otomatis, jumlah_terjual)
+ * - Clear Stok: hapus stok simulasi (seluruh atau sebelum tanggal tertentu) dengan urutan aman
  */
 
+// Debug sementara (MATIKAN di production)
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
+// Mulai sesi lebih awal
 if (session_status() !== PHP_SESSION_ACTIVE) {
   session_start();
 }
@@ -27,16 +31,18 @@ require_once __DIR__ . '/../includes/koneksi.php';
 // Muat partial navbar admin konsisten
 include_once __DIR__ . '/../includes/navbar_admin.php';
 
+// CSRF token
 if (empty($_SESSION['csrf_token'])) {
   $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-function post($k,$d=''){ return isset($_POST[$k]) ? trim($_POST[$k]) : $d; }
-function get($k,$d=''){ return isset($_GET[$k]) ? trim($_GET[$k]) : $d; }
+function post($k, $d=''){ return isset($_POST[$k]) ? trim($_POST[$k]) : $d; }
+function get($k, $d=''){ return isset($_GET[$k]) ? trim($_GET[$k]) : $d; }
 
 $flash = null;
+$today = date('Y-m-d');
 
-// Aksi CRUD
+// Aksi POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $csrf = post('csrf_token');
   if (!hash_equals($_SESSION['csrf_token'], $csrf)) {
@@ -44,426 +50,459 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } else {
     $action = post('action');
 
-    if ($action === 'create_produk') {
-      $supplier_id     = post('supplier_id');
-      $nama            = post('nama');
-      $jenis           = post('jenis');
-      $harga_supplier  = post('harga_supplier');
-      $margin_fnb      = post('margin_fnb');
+    // 1) Tambah stok masuk
+    if ($action === 'create_stok') {
+      $produk_id = post('produk_id');
+      $tanggal_masuk = post('tanggal_masuk', $today);
+      $jumlah_masuk = post('jumlah_masuk');
+      $shelf_life_days = post('shelf_life_days'); // opsional override
 
-      if (!ctype_digit($supplier_id) || $nama === '' || !in_array($jenis, ['kudapan','minuman'], true) || !is_numeric($harga_supplier) || !is_numeric($margin_fnb)) {
-        $flash = ['type'=>'danger','msg'=>'Input produk tidak valid.'];
+      if (!ctype_digit($produk_id) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $tanggal_masuk) || !ctype_digit($jumlah_masuk)) {
+        $flash = ['type'=>'danger','msg'=>'Input stok tidak valid.'];
       } else {
-        $sid = (int)$supplier_id;
-        $hs  = (float)$harga_supplier;
-        $mf  = (float)$margin_fnb;
+        $pid = (int)$produk_id;
+        $jm  = (int)$jumlah_masuk;
+        $sld = ($shelf_life_days !== '' && ctype_digit($shelf_life_days)) ? (int)$shelf_life_days : null;
 
-        // Pastikan supplier ada
-        $stmtS = $conn->prepare("SELECT id FROM supplier WHERE id = ? LIMIT 1");
-        $stmtS->bind_param("i", $sid);
-        $stmtS->execute();
-        $existsS = $stmtS->get_result()->fetch_assoc();
-        $stmtS->close();
+        // Ambil jenis produk untuk default shelf life jika tidak diisi
+        $stmtJ = $conn->prepare("SELECT jenis FROM produk WHERE id = ? LIMIT 1");
+        $stmtJ->bind_param("i", $pid);
+        $stmtJ->execute();
+        $rowJ = $stmtJ->get_result()->fetch_assoc();
+        $stmtJ->close();
 
-        if (!$existsS) {
-          $flash = ['type'=>'danger','msg'=>'Supplier tidak ditemukan.'];
+        if (!$rowJ) {
+          $flash = ['type'=>'danger','msg'=>'Produk tidak ditemukan.'];
         } else {
-          $stmt = $conn->prepare("INSERT INTO produk (nama, jenis, harga_supplier, margin_fnb, supplier_id) VALUES (?, ?, ?, ?, ?)");
-          $stmt->bind_param("ssddi", $nama, $jenis, $hs, $mf, $sid);
+          // Hitung expired_at (default: kudapan=1 hari, minuman=3 hari)
+          if ($sld === null || $sld <= 0) {
+            $sld = ($rowJ['jenis'] === 'kudapan') ? 1 : 3; // default bisnis
+          }
+          $exp = date('Y-m-d', strtotime("$tanggal_masuk +$sld day"));
+
+          // Insert stok
+          $stmt = $conn->prepare("
+            INSERT INTO stok (produk_id, tanggal_masuk, jumlah_masuk, shelf_life_days, expired_at)
+            VALUES (?, ?, ?, ?, ?)
+          ");
+          $stmt->bind_param("isiss", $pid, $tanggal_masuk, $jm, $sld, $exp);
           if ($stmt->execute()) {
-            $flash = ['type'=>'success','msg'=>'Produk berhasil ditambahkan.'];
+            $flash = ['type'=>'success','msg'=>'Stok masuk berhasil ditambahkan.'];
           } else {
-            $flash = ['type'=>'danger','msg'=>'Gagal menambah produk: ' . htmlspecialchars($stmt->error)];
+            $flash = ['type'=>'danger','msg'=>'Gagal menambah stok: ' . htmlspecialchars($stmt->error)];
           }
           $stmt->close();
         }
       }
 
-    } elseif ($action === 'update_produk') {
-      $id              = post('id');
-      $supplier_id     = post('supplier_id');
-      $nama            = post('nama');
-      $jenis           = post('jenis');
-      $harga_supplier  = post('harga_supplier');
-      $margin_fnb      = post('margin_fnb');
+    // 2) Catat stok akhir harian
+    } elseif ($action === 'create_stok_akhir') {
+      $stok_id = post('stok_id');
+      $jumlah_sisa = post('jumlah_sisa');
 
-      if (!ctype_digit($id) || !ctype_digit($supplier_id) || $nama === '' || !in_array($jenis, ['kudapan','minuman'], true) || !is_numeric($harga_supplier) || !is_numeric($margin_fnb)) {
-        $flash = ['type'=>'danger','msg'=>'Input produk tidak valid.'];
+      if (!ctype_digit($stok_id) || !ctype_digit($jumlah_sisa)) {
+        $flash = ['type'=>'danger','msg'=>'Input stok akhir tidak valid.'];
       } else {
-        $pid = (int)$id;
-        $sid = (int)$supplier_id;
-        $hs  = (float)$harga_supplier;
-        $mf  = (float)$margin_fnb;
+        $sid = (int)$stok_id;
+        $js  = (int)$jumlah_sisa;
 
-        // Pastikan produk ada
-        $stmtP = $conn->prepare("SELECT id FROM produk WHERE id = ? LIMIT 1");
-        $stmtP->bind_param("i", $pid);
-        $stmtP->execute();
-        $exP = $stmtP->get_result()->fetch_assoc();
-        $stmtP->close();
-
-        // Pastikan supplier ada
-        $stmtS = $conn->prepare("SELECT id FROM supplier WHERE id = ? LIMIT 1");
+        // Ambil stok untuk validasi & hitung status
+        $stmtS = $conn->prepare("SELECT jumlah_masuk, expired_at FROM stok WHERE id = ? LIMIT 1");
         $stmtS->bind_param("i", $sid);
         $stmtS->execute();
-        $exS = $stmtS->get_result()->fetch_assoc();
+        $rowS = $stmtS->get_result()->fetch_assoc();
         $stmtS->close();
 
-        if (!$exP || !$exS) {
-          $flash = ['type'=>'danger','msg'=>'Produk/Supplier tidak ditemukan.'];
+        if (!$rowS) {
+          $flash = ['type'=>'danger','msg'=>'Data stok tidak ditemukan.'];
         } else {
-          $stmt = $conn->prepare("UPDATE produk SET nama = ?, jenis = ?, harga_supplier = ?, margin_fnb = ?, supplier_id = ? WHERE id = ?");
-          $stmt->bind_param("ssddii", $nama, $jenis, $hs, $mf, $sid, $pid);
-          $stmt->execute();
-          if ($stmt->affected_rows >= 0) {
-            $flash = ['type'=>'success','msg'=>'Produk diperbarui.'];
+          $jm = (int)$rowS['jumlah_masuk'];
+          if ($js < 0 || $js > $jm) {
+            $flash = ['type'=>'danger','msg'=>'Jumlah sisa harus antara 0 dan jumlah masuk.'];
           } else {
-            $flash = ['type'=>'warning','msg'=>'Tidak ada perubahan.'];
+            $jt = $jm - $js; // jumlah terjual
+            $expired_at = $rowS['expired_at'];
+            $status = 'carried_over';
+            if ($js === 0) {
+              $status = 'sold_out';
+            } elseif ($today >= $expired_at && $js > 0) {
+              $status = 'expired';
+            }
+
+            // Upsert stok_akhir untuk tanggal hari ini
+            $stmtA = $conn->prepare("
+              INSERT INTO stok_akhir (stok_id, jumlah_sisa, processed_date, jumlah_terjual, status)
+              VALUES (?, ?, ?, ?, ?)
+              ON DUPLICATE KEY UPDATE
+                jumlah_sisa = VALUES(jumlah_sisa),
+                jumlah_terjual = VALUES(jumlah_terjual),
+                status = VALUES(status)
+            ");
+            $stmtA->bind_param("iisis", $sid, $js, $today, $jt, $status);
+            if ($stmtA->execute()) {
+              $flash = ['type'=>'success','msg'=>'Stok akhir berhasil dicatat.'];
+            } else {
+              $flash = ['type'=>'danger','msg'=>'Gagal mencatat stok akhir: ' . htmlspecialchars($stmtA->error)];
+            }
+            $stmtA->close();
           }
-          $stmt->close();
         }
       }
 
-    } elseif ($action === 'delete_produk') {
-      $id = post('id');
-      if (!ctype_digit($id)) {
-        $flash = ['type'=>'danger','msg'=>'ID produk tidak valid.'];
-      } else {
-        $pid = (int)$id;
-        // Cek stok terkait
-        $stmtC = $conn->prepare("SELECT COUNT(*) AS c FROM stok WHERE produk_id = ?");
-        $stmtC->bind_param("i", $pid);
-        $stmtC->execute();
-        $resC = $stmtC->get_result()->fetch_assoc();
-        $stmtC->close();
+    // 3) Clear Stok (hapus stok simulasi)
+    } elseif ($action === 'clear_stok') {
+      $confirm_text = post('confirm_text');
+      $reset_ai = post('reset_ai'); // 'yes' or ''
+      $before_date = post('before_date'); // opsional (YYYY-MM-DD)
 
-        if (($resC['c'] ?? 0) > 0) {
-          $flash = ['type'=>'danger','msg'=>'Tidak dapat menghapus: ada stok terkait produk ini.'];
-        } else {
-          $stmt = $conn->prepare("DELETE FROM produk WHERE id = ?");
-          $stmt->bind_param("i", $pid);
-          if ($stmt->execute() && $stmt->affected_rows > 0) {
-            $flash = ['type'=>'success','msg'=>'Produk dihapus.'];
+      if ($confirm_text !== 'CLEAR') {
+        $flash = ['type'=>'danger','msg'=>'Konfirmasi tidak sesuai. Ketik CLEAR untuk melanjutkan.'];
+      } else {
+        try {
+          $conn->begin_transaction();
+
+          if ($before_date !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $before_date)) {
+            // Hapus stok_akhir untuk stok sebelum batas tanggal
+            $stmtDelSa = $conn->prepare("
+              DELETE sa
+              FROM stok_akhir sa
+              JOIN stok st ON st.id = sa.stok_id
+              WHERE st.tanggal_masuk < ?
+            ");
+            $stmtDelSa->bind_param("s", $before_date);
+            $stmtDelSa->execute();
+            $stmtDelSa->close();
+
+            // Hapus stok parent (child sudah dihapus)
+            $stmtDelSt = $conn->prepare("DELETE FROM stok WHERE tanggal_masuk < ?");
+            $stmtDelSt->bind_param("s", $before_date);
+            $stmtDelSt->execute();
+            $stmtDelSt->close();
           } else {
-            $flash = ['type'=>'danger','msg'=>'Gagal menghapus produk.'];
+            // Full clear seluruh data stok_akhir lalu stok (urutan aman)
+            $conn->query("DELETE FROM stok_akhir");
+            $conn->query("DELETE FROM stok");
           }
-          $stmt->close();
+
+          if ($reset_ai === 'yes') {
+            $conn->query("ALTER TABLE stok_akhir AUTO_INCREMENT = 1");
+            $conn->query("ALTER TABLE stok AUTO_INCREMENT = 1");
+          }
+
+          $conn->commit();
+          $scope = ($before_date !== '') ? "sebelum $before_date" : "seluruh";
+          $flash = ['type'=>'success','msg'=>"Clear stok ($scope) berhasil dijalankan."];
+        } catch (Throwable $e) {
+          $conn->rollback();
+          $flash = ['type'=>'danger','msg'=>'Gagal clear stok: '.htmlspecialchars($e->getMessage())];
         }
       }
     }
   }
 }
 
-// Data tampilan
-$q     = get('q', '');
-$page  = max(1, (int)get('page', '1'));
-$limit = 10;
-$offset = ($page - 1) * $limit;
-
-// Suppliers untuk dropdown (tampilkan semua, beri label jika belum punya user)
-$suppliers = $conn->query("
-  SELECT s.id, s.nama, s.user_id, u.username
-  FROM supplier s
-  LEFT JOIN users u ON u.id = s.user_id
-  ORDER BY s.nama ASC
+// Data untuk tampilan
+// Produk daftar (untuk input stok)
+$products = $conn->query("
+  SELECT p.id, p.nama, p.jenis, s.nama AS supplier
+  FROM produk p
+  JOIN supplier s ON s.id = p.supplier_id
+  ORDER BY s.nama ASC, p.nama ASC
 ")->fetch_all(MYSQLI_ASSOC);
 
-// Hitung total produk
-if ($q !== '') {
-  $like = '%' . $q . '%';
-  $stmtCnt = $conn->prepare("
-    SELECT COUNT(*) AS c
-    FROM produk p
-    JOIN supplier s ON s.id = p.supplier_id
-    WHERE p.nama LIKE ? OR s.nama LIKE ?
-  ");
-  $stmtCnt->bind_param("ss", $like, $like);
-} else {
-  $stmtCnt = $conn->prepare("SELECT COUNT(*) AS c FROM produk");
-}
-$stmtCnt->execute();
-$total = (int)$stmtCnt->get_result()->fetch_assoc()['c'];
-$stmtCnt->close();
+// Stok hari ini
+$stmtToday = $conn->prepare("
+  SELECT st.id, st.produk_id, st.tanggal_masuk, st.jumlah_masuk, st.expired_at,
+         p.nama AS produk_nama, p.jenis,
+         sa.jumlah_sisa, sa.jumlah_terjual, sa.status
+  FROM stok st
+  JOIN produk p ON p.id = st.produk_id
+  LEFT JOIN stok_akhir sa ON sa.stok_id = st.id AND sa.processed_date = ?
+  WHERE st.tanggal_masuk = ?
+  ORDER BY st.id DESC
+");
+$stmtToday->bind_param("ss", $today, $today);
+$stmtToday->execute();
+$stok_today = $stmtToday->get_result()->fetch_all(MYSQLI_ASSOC);
+$stmtToday->close();
 
-// Ambil produk (gunakan embed limit/offset numerik aman)
-if ($q !== '') {
-  $like = '%' . $q . '%';
-  $sql = "
-    SELECT p.id, p.nama, p.jenis, p.harga_supplier, p.margin_fnb, p.harga_jual, 
-           s.id AS supplier_id, s.nama AS supplier_nama, u.username AS supplier_user
-    FROM produk p
-    JOIN supplier s ON s.id = p.supplier_id
-    LEFT JOIN users u ON u.id = s.user_id
-    WHERE p.nama LIKE ? OR s.nama LIKE ?
-    ORDER BY p.id DESC
-    LIMIT $limit OFFSET $offset
-  ";
-  $stmtP = $conn->prepare($sql);
-  $stmtP->bind_param("ss", $like, $like);
-} else {
-  $sql = "
-    SELECT p.id, p.nama, p.jenis, p.harga_supplier, p.margin_fnb, p.harga_jual, 
-           s.id AS supplier_id, s.nama AS supplier_nama, u.username AS supplier_user
-    FROM produk p
-    JOIN supplier s ON s.id = p.supplier_id
-    LEFT JOIN users u ON u.id = s.user_id
-    ORDER BY p.id DESC
-    LIMIT $limit OFFSET $offset
-  ";
-  $stmtP = $conn->prepare($sql);
-}
-$stmtP->execute();
-$products = $stmtP->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmtP->close();
+// Stok aktif (carry-over sebelum expired)
+$stmtActive = $conn->prepare("
+  SELECT st.id, st.produk_id, st.tanggal_masuk, st.jumlah_masuk, st.expired_at,
+         p.nama AS produk_nama, p.jenis,
+         COALESCE(sa.jumlah_sisa, st.jumlah_masuk) AS sisa_terkini,
+         sa.status, sa.processed_date
+  FROM stok st
+  JOIN produk p ON p.id = st.produk_id
+  LEFT JOIN stok_akhir sa 
+         ON sa.stok_id = st.id 
+         AND sa.processed_date = (
+           SELECT MAX(sa2.processed_date) FROM stok_akhir sa2 WHERE sa2.stok_id = st.id
+         )
+  WHERE CURDATE() < st.expired_at
+  ORDER BY st.expired_at ASC, st.id DESC
+");
+$stmtActive->execute();
+$stok_active = $stmtActive->get_result()->fetch_all(MYSQLI_ASSOC);
+$stmtActive->close();
 
-$total_pages = (int)ceil($total / $limit);
 ?>
 <!doctype html>
 <html lang="id">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Manage Produk - Admin</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-  </head>
-  <body class="bg-light">
-    <?php render_admin_navbar(); ?>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Manage Stok - Admin</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+</head>
+<body class="bg-light">
 
-    <main class="container py-4">
-      <?php if ($flash): ?>
-        <div class="alert alert-<?= $flash['type'] ?>"><?= htmlspecialchars($flash['msg']) ?></div>
-      <?php endif; ?>
+<?php render_admin_navbar(); ?>
 
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-          <h1 class="h4 mb-0">Manage Produk</h1>
-          <small class="text-muted">Admin dapat mengelola produk untuk semua supplier.</small>
+<main class="container py-4">
+  <?php if ($flash): ?>
+    <div class="alert alert-<?= $flash['type'] ?>"><?= htmlspecialchars($flash['msg']) ?></div>
+  <?php endif; ?>
+
+  <!-- Header + tombol Clear Stok -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h4 mb-0">Manage Stok</h1>
+    <div class="btn-group">
+      <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#clearStokModal">
+        <i class="bi bi-trash3"></i> Clear Stok
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal Clear Stok -->
+  <div class="modal fade" id="clearStokModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+      <form method="post">
+        <div class="modal-header">
+          <h5 class="modal-title">Konfirmasi Clear Stok</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createProdukModal">
-          <i class="bi bi-plus-circle"></i> Tambah Produk
-        </button>
-      </div>
+        <div class="modal-body">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+          <input type="hidden" name="action" value="clear_stok">
 
-      <!-- Pencarian -->
-      <form class="d-flex mb-3" method="get">
-        <input type="text" name="q" class="form-control me-2" placeholder="Cari nama produk / supplier..." value="<?= htmlspecialchars($q) ?>">
-        <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i> Cari</button>
-      </form>
+          <div class="alert alert-warning">
+            Tindakan ini akan menghapus data stok (stok_akhir dan stok). Lakukan hanya untuk reset awal perhitungan (pra go-live).
+          </div>
 
-      <!-- Tabel Produk -->
-      <div class="card shadow-sm">
-        <div class="card-body p-0">
-          <div class="table-responsive">
-            <table class="table table-striped table-hover mb-0 align-middle">
-              <thead class="table-light">
-                <tr>
-                  <th>ID</th>
-                  <th>Produk</th>
-                  <th>Supplier</th>
-                  <th>Jenis</th>
-                  <th class="text-end">Harga Supplier</th>
-                  <th class="text-end">Margin FnB</th>
-                  <th class="text-end">Harga Jual</th>
-                  <th class="text-end">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php if (empty($products)): ?>
-                  <tr><td colspan="8" class="text-center text-muted py-4">Tidak ada data.</td></tr>
-                <?php else: foreach ($products as $p): ?>
-                  <tr>
-                    <td><?= $p['id'] ?></td>
-                    <td><?= htmlspecialchars($p['nama']) ?></td>
-                    <td>
-                      <?= htmlspecialchars($p['supplier_nama']) ?>
-                      <?php if (!$p['supplier_user']): ?>
-                        <span class="badge text-bg-secondary ms-1">No user</span>
-                      <?php else: ?>
-                        <span class="badge text-bg-info ms-1">@<?= htmlspecialchars($p['supplier_user']) ?></span>
-                      <?php endif; ?>
-                    </td>
-                    <td><span class="badge text-bg-secondary"><?= htmlspecialchars($p['jenis']) ?></span></td>
-                    <td class="text-end">Rp <?= number_format((float)$p['harga_supplier'], 2, ',', '.') ?></td>
-                    <td class="text-end">Rp <?= number_format((float)$p['margin_fnb'], 2, ',', '.') ?></td>
-                    <td class="text-end">Rp <?= number_format((float)$p['harga_jual'], 2, ',', '.') ?></td>
-                    <td class="text-end">
-                      <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editProdukModal<?= $p['id'] ?>">Edit</button>
-                        <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteProdukModal<?= $p['id'] ?>">Delete</button>
-                      </div>
-                    </td>
-                  </tr>
+          <div class="mb-3">
+            <label class="form-label">Hapus sebelum tanggal (opsional)</label>
+            <input type="date" name="before_date" class="form-control">
+            <div class="form-text">Kosongkan untuk menghapus seluruh data stok.</div>
+          </div>
 
-                  <!-- Edit Modal -->
-                  <div class="modal fade" id="editProdukModal<?= $p['id'] ?>" tabindex="-1" aria-hidden="true">
-                    <div class="modal-dialog"><div class="modal-content">
-                      <form method="post">
-                        <div class="modal-header">
-                          <h5 class="modal-title">Edit Produk</h5>
-                          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                          <input type="hidden" name="action" value="update_produk">
-                          <input type="hidden" name="id" value="<?= $p['id'] ?>">
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" value="yes" id="resetAi" name="reset_ai">
+            <label class="form-check-label" for="resetAi">Reset nomor urut (AUTO_INCREMENT) setelah hapus</label>
+          </div>
 
-                          <div class="form-floating mb-3">
-                            <input type="text" class="form-control" id="nama<?= $p['id'] ?>" name="nama" value="<?= htmlspecialchars($p['nama']) ?>" required>
-                            <label for="nama<?= $p['id'] ?>">Nama</label>
-                          </div>
-
-                          <div class="mb-3">
-                            <label class="form-label">Supplier</label>
-                            <select class="form-select" name="supplier_id" required>
-                              <?php foreach ($suppliers as $s): ?>
-                                <option value="<?= (int)$s['id'] ?>" <?= ((int)$s['id'] === (int)$p['supplier_id']) ? 'selected' : '' ?>>
-                                  <?= htmlspecialchars($s['nama']) ?> <?= $s['username'] ? '@'.htmlspecialchars($s['username']) : '(no user)' ?>
-                                </option>
-                              <?php endforeach; ?>
-                            </select>
-                          </div>
-
-                          <div class="mb-3">
-                            <label class="form-label">Jenis</label>
-                            <select class="form-select" name="jenis" required>
-                              <option value="kudapan" <?= $p['jenis']==='kudapan'?'selected':'' ?>>Kudapan</option>
-                              <option value="minuman" <?= $p['jenis']==='minuman'?'selected':'' ?>>Minuman</option>
-                            </select>
-                          </div>
-
-                          <div class="row g-3">
-                            <div class="col-md-6">
-                              <div class="form-floating">
-                                <input type="number" step="0.01" class="form-control" id="hs<?= $p['id'] ?>" name="harga_supplier" value="<?= htmlspecialchars((string)$p['harga_supplier']) ?>" required>
-                                <label for="hs<?= $p['id'] ?>">Harga Supplier</label>
-                              </div>
-                            </div>
-                            <div class="col-md-6">
-                              <div class="form-floating">
-                                <input type="number" step="0.01" class="form-control" id="mf<?= $p['id'] ?>" name="margin_fnb" value="<?= htmlspecialchars((string)$p['margin_fnb']) ?>" required>
-                                <label for="mf<?= $p['id'] ?>">Margin FnB</label>
-                              </div>
-                            </div>
-                          </div>
-                          <div class="form-text mt-2">
-                            Harga jual dihitung otomatis dari harga supplier + margin FnB (kolom generated).
-                          </div>
-                        </div>
-                        <div class="modal-footer">
-                          <button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                          <button class="btn btn-primary" type="submit">Simpan</button>
-                        </div>
-                      </form>
-                    </div></div>
-                  </div>
-
-                  <!-- Delete Modal -->
-                  <div class="modal fade" id="deleteProdukModal<?= $p['id'] ?>" tabindex="-1" aria-hidden="true">
-                    <div class="modal-dialog"><div class="modal-content">
-                      <form method="post">
-                        <div class="modal-header">
-                          <h5 class="modal-title">Hapus Produk</h5>
-                          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                          <p class="mb-2">Tindakan ini tidak dapat dibatalkan. Jika ada stok terkait, penghapusan akan ditolak.</p>
-                          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                          <input type="hidden" name="action" value="delete_produk">
-                          <input type="hidden" name="id" value="<?= $p['id'] ?>">
-                        </div>
-                        <div class="modal-footer">
-                          <button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                          <button class="btn btn-danger" type="submit">Hapus</button>
-                        </div>
-                      </form>
-                    </div></div>
-                  </div>
-
-                <?php endforeach; endif; ?>
-              </tbody>
-            </table>
+          <div class="mb-3">
+            <label class="form-label">Ketik CLEAR untuk konfirmasi</label>
+            <input type="text" name="confirm_text" class="form-control" placeholder="CLEAR" required>
           </div>
         </div>
-      </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+          <button class="btn btn-danger" type="submit">Hapus</button>
+        </div>
+      </form>
+    </div></div>
+  </div>
 
-      <!-- Pagination -->
-      <?php if ($total_pages > 1): ?>
-        <nav class="mt-3">
-          <ul class="pagination pagination-sm">
-            <?php for ($i = 1; $i <= $total_pages; $i++): ?>
-              <li class="page-item <?= $i === $page ? 'active' : '' ?>">
-                <a class="page-link" href="?q=<?= urlencode($q) ?>&page=<?= $i ?>"><?= $i ?></a>
-              </li>
-            <?php endfor; ?>
-          </ul>
-        </nav>
-      <?php endif; ?>
+  <!-- Input Stok Masuk -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header">Stok Masuk (Hari Ini)</div>
+    <div class="card-body">
+      <form method="post" class="row g-3">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+        <input type="hidden" name="action" value="create_stok">
 
-      <!-- Create Modal -->
-      <div class="modal fade" id="createProdukModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg"><div class="modal-content">
-          <form method="post">
-            <div class="modal-header">
-              <h5 class="modal-title">Tambah Produk</h5>
-              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-              <input type="hidden" name="action" value="create_produk">
+        <div class="col-md-6">
+          <label class="form-label">Produk</label>
+          <select name="produk_id" class="form-select" required>
+            <option value="">-- Pilih Produk --</option>
+            <?php foreach ($products as $p): ?>
+              <option value="<?= $p['id'] ?>">
+                <?= htmlspecialchars($p['supplier']) ?> — <?= htmlspecialchars($p['nama']) ?> (<?= htmlspecialchars($p['jenis']) ?>)
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </div>
 
-              <div class="row g-3">
-                <div class="col-md-6">
-                  <label class="form-label">Supplier</label>
-                  <select class="form-select" name="supplier_id" required>
-                    <option value="">-- Pilih Supplier --</option>
-                    <?php foreach ($suppliers as $s): ?>
-                      <option value="<?= $s['id'] ?>">
-                        <?= htmlspecialchars($s['nama']) ?> <?= $s['username'] ? '@'.htmlspecialchars($s['username']) : '(no user)' ?>
-                      </option>
-                    <?php endforeach; ?>
-                  </select>
-                  <div class="form-text">Supplier tanpa user akan ditandai (no user).</div>
-                </div>
-                <div class="col-md-6">
-                  <div class="form-floating">
-                    <input type="text" class="form-control" id="namaBaru" name="nama" placeholder="Nama produk" required>
-                    <label for="namaBaru">Nama produk</label>
-                  </div>
-                </div>
-                <div class="col-md-6">
-                  <label class="form-label">Jenis</label>
-                  <select class="form-select" name="jenis" required>
-                    <option value="kudapan">Kudapan</option>
-                    <option value="minuman">Minuman</option>
-                  </select>
-                </div>
-                <div class="col-md-6">
-                  <div class="form-floating">
-                    <input type="number" step="0.01" class="form-control" id="hsBaru" name="harga_supplier" placeholder="Harga supplier" required>
-                    <label for="hsBaru">Harga supplier</label>
-                  </div>
-                </div>
-                <div class="col-md-6">
-                  <div class="form-floating">
-                    <input type="number" step="0.01" class="form-control" id="mfBaru" name="margin_fnb" placeholder="Margin FnB" required>
-                    <label for="mfBaru">Margin FnB</label>
-                  </div>
-                </div>
+        <div class="col-md-3">
+          <div class="form-floating">
+            <input type="date" class="form-control" id="tanggalMasuk" name="tanggal_masuk" value="<?= htmlspecialchars($today) ?>" required>
+            <label for="tanggalMasuk">Tanggal masuk</label>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <div class="form-floating">
+            <input type="number" class="form-control" id="jumlahMasuk" name="jumlah_masuk" min="1" step="1" placeholder="Jumlah" required>
+            <label for="jumlahMasuk">Jumlah masuk</label>
+          </div>
+        </div>
+
+        <div class="col-md-4">
+          <div class="form-floating">
+            <input type="number" class="form-control" id="shelfLifeDays" name="shelf_life_days" min="1" step="1" placeholder="Override masa expired (hari)">
+            <label for="shelfLifeDays">Masa expired (hari, opsional)</label>
+          </div>
+          <div class="form-text">Kosongkan untuk default: 1 hari (kudapan), 3 hari (minuman).</div>
+        </div>
+
+        <div class="col-12">
+          <button class="btn btn-primary" type="submit"><i class="bi bi-plus-circle me-1"></i> Tambah Stok</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Daftar Stok Hari Ini -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>Stok Hari Ini</span>
+      <span class="text-muted small"><?= htmlspecialchars($today) ?></span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-striped table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>Produk</th>
+              <th>Jenis</th>
+              <th class="text-end">Jumlah Masuk</th>
+              <th>Expired At</th>
+              <th>Stok Akhir (Hari Ini)</th>
+              <th class="text-end">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php if (empty($stok_today)): ?>
+              <tr><td colspan="7" class="text-center text-muted py-4">Belum ada stok masuk hari ini.</td></tr>
+            <?php else: foreach ($stok_today as $st): ?>
+              <tr>
+                <td><?= $st['id'] ?></td>
+                <td><?= htmlspecialchars($st['produk_nama']) ?></td>
+                <td><span class="badge text-bg-secondary"><?= htmlspecialchars($st['jenis']) ?></span></td>
+                <td class="text-end"><?= (int)$st['jumlah_masuk'] ?></td>
+                <td><?= htmlspecialchars($st['expired_at']) ?></td>
+                <td>
+                  <?php if ($st['jumlah_sisa'] !== null): ?>
+                    <span class="badge text-bg-info">Sisa: <?= (int)$st['jumlah_sisa'] ?></span>
+                    <span class="badge text-bg-secondary">Terjual: <?= (int)$st['jumlah_terjual'] ?></span>
+                    <span class="badge text-bg-<?= $st['status']==='expired'?'danger':($st['status']==='sold_out'?'success':'warning') ?>">
+                      <?= htmlspecialchars($st['status']) ?>
+                    </span>
+                  <?php else: ?>
+                    <span class="text-muted">Belum diproses</span>
+                  <?php endif; ?>
+                </td>
+                <td class="text-end">
+                  <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#stokAkhirModal<?= $st['id'] ?>">
+                    Catat Stok Akhir
+                  </button>
+                </td>
+              </tr>
+
+              <!-- Modal stok akhir -->
+              <div class="modal fade" id="stokAkhirModal<?= $st['id'] ?>" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog"><div class="modal-content">
+                  <form method="post">
+                    <div class="modal-header">
+                      <h5 class="modal-title">Stok Akhir — <?= htmlspecialchars($st['produk_nama']) ?></h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                      <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                      <input type="hidden" name="action" value="create_stok_akhir">
+                      <input type="hidden" name="stok_id" value="<?= $st['id'] ?>">
+
+                      <div class="form-floating">
+                        <input type="number" class="form-control" id="jumlahSisa<?= $st['id'] ?>"
+                               name="jumlah_sisa" min="0" max="<?= (int)$st['jumlah_masuk'] ?>" step="1" placeholder="Jumlah sisa" required>
+                        <label for="jumlahSisa<?= $st['id'] ?>">Jumlah sisa</label>
+                      </div>
+                      <div class="form-text mt-2">
+                        Terjual = jumlah masuk − jumlah sisa. Status otomatis: sold_out, expired, atau carried_over.
+                      </div>
+                    </div>
+                    <div class="modal-footer">
+                      <button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                      <button class="btn btn-primary" type="submit">Simpan</button>
+                    </div>
+                  </form>
+                </div></div>
               </div>
-              <div class="form-text mt-2">
-                Harga jual akan otomatis dihitung oleh database dari harga supplier + margin FnB (kolom generated).
-              </div>
-            </div>
-            <div class="modal-footer">
-              <button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-              <button class="btn btn-primary" type="submit">Simpan</button>
-            </div>
-          </form>
-        </div></div>
-      </div>
-    </main>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-  </body>
+            <?php endforeach; endif; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stok Aktif (Carry-over sebelum expired) -->
+  <div class="card shadow-sm">
+    <div class="card-header">Stok Aktif (Belum expired, sisa ada)</div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-striped table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>Produk</th>
+              <th>Jenis</th>
+              <th>Tanggal Masuk</th>
+              <th>Expired At</th>
+              <th class="text-end">Sisa Terkini</th>
+              <th>Status Terakhir</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php if (empty($stok_active)): ?>
+              <tr><td colspan="7" class="text-center text-muted py-4">Tidak ada stok aktif.</td></tr>
+            <?php else: foreach ($stok_active as $sa): ?>
+              <tr>
+                <td><?= $sa['id'] ?></td>
+                <td><?= htmlspecialchars($sa['produk_nama']) ?></td>
+                <td><span class="badge text-bg-secondary"><?= htmlspecialchars($sa['jenis']) ?></span></td>
+                <td><?= htmlspecialchars($sa['tanggal_masuk']) ?></td>
+                <td><?= htmlspecialchars($sa['expired_at']) ?></td>
+                <td class="text-end"><?= (int)$sa['sisa_terkini'] ?></td>
+                <td>
+                  <?php if ($sa['processed_date']): ?>
+                    <span class="badge text-bg-<?= $sa['status']==='expired'?'danger':($sa['status']==='sold_out'?'success':'warning') ?>">
+                      <?= htmlspecialchars($sa['status']) ?>
+                    </span>
+                    <small class="text-muted">pada <?= htmlspecialchars($sa['processed_date']) ?></small>
+                  <?php else: ?>
+                    <span class="text-muted">Belum pernah dicatat</span>
+                  <?php endif; ?>
+                </td>
+              </tr>
+            <?php endforeach; endif; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer class="border-top mt-4">
+  <div class="container py-3">
+    <small class="text-muted">&copy; <?= date('Y'); ?> F &amp; B ELAF Store</small>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
 </html>
