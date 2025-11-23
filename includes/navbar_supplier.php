@@ -20,6 +20,7 @@ if (!function_exists('render_supplier_navbar')) {
             <li class="nav-item"><a class="nav-link<?= nav_active('/supplier/manage_produk.php') ?>" href="/supplier/manage_produk.php">Manage Produk</a></li>
             <li class="nav-item"><a class="nav-link<?= nav_active('/index.php') ?>" href="/index.php">View Etalase</a></li>
             <li class="nav-item"><a class="nav-link<?= nav_active('/supplier/reports.php') ?>" href="/supplier/reports.php">Laporan</a></li>
+            <li class="nav-item"><a class="nav-link<?= nav_active('/supplier/help.php') ?>" href="/supplier/help.php">Bantuan</a></li>
           </ul>
           <a class="btn btn-outline-light btn-sm" href="/logout.php"><i class="bi bi-box-arrow-right me-1"></i> Logout</a>
         </div>
