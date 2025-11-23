@@ -4,10 +4,10 @@ declare(strict_types=1);
 /**
  * Admin - Manage Stok
  * Fitur:
- * - Input stok masuk (produk, tanggal_masuk, jumlah_masuk, opsi override shelf_life_days)
+ * - Input stok masuk (produk, tanggal_masuk, jumlah_masuk, override masa expired)
  * - Daftar stok hari ini dan stok aktif (carry-over sebelum expired)
- * - Pencatatan stok akhir harian (jumlah_sisa, status otomatis, jumlah_terjual)
- * - Clear Stok: hapus stok simulasi (seluruh atau sebelum tanggal tertentu) dengan urutan aman
+ * - Pencatatan stok akhir harian (jumlah_sisa, jumlah_terjual, status: sold_out/expired/carry_over)
+ * - Clear Stok: hapus stok simulasi (seluruh atau sebelum tanggal tertentu) dengan urutan aman (stok_akhir -> stok)
  */
 
 // Debug sementara (MATIKAN di production)
@@ -106,8 +106,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $sid = (int)$stok_id;
         $js  = (int)$jumlah_sisa;
 
-        // Ambil stok untuk validasi & hitung status
-        $stmtS = $conn->prepare("SELECT jumlah_masuk, expired_at FROM stok WHERE id = ? LIMIT 1");
+        // Ambil stok + jenis produk + shelf life
+        $stmtS = $conn->prepare("
+          SELECT st.jumlah_masuk, st.expired_at, st.shelf_life_days, p.jenis
+          FROM stok st
+          JOIN produk p ON p.id = st.produk_id
+          WHERE st.id = ? LIMIT 1
+        ");
         $stmtS->bind_param("i", $sid);
         $stmtS->execute();
         $rowS = $stmtS->get_result()->fetch_assoc();
@@ -121,15 +126,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash = ['type'=>'danger','msg'=>'Jumlah sisa harus antara 0 dan jumlah masuk.'];
           } else {
             $jt = $jm - $js; // jumlah terjual
-            $expired_at = $rowS['expired_at'];
-            $status = 'carried_over';
+            $expired_at     = $rowS['expired_at'];         // DATE
+            $shelf_life     = (int)$rowS['shelf_life_days'];
+            $jenis          = (string)$rowS['jenis'];
+
+            // Kebijakan status EOD:
+            // - sisa=0 -> sold_out
+            // - kudapan/shelf_life=1 -> expired walau today < expired_at
+            // - lainnya: carried_over bila today < expired_at, else expired
             if ($js === 0) {
               $status = 'sold_out';
-            } elseif ($today >= $expired_at && $js > 0) {
-              $status = 'expired';
+            } else {
+              $only_same_day = ($jenis === 'kudapan' || $shelf_life === 1);
+              if ($only_same_day) {
+                $status = 'expired';
+              } else {
+                $status = (date('Y-m-d') < $expired_at) ? 'carried_over' : 'expired';
+              }
             }
 
-            // Upsert stok_akhir untuk tanggal hari ini
+            // Upsert stok_akhir untuk hari ini
             $stmtA = $conn->prepare("
               INSERT INTO stok_akhir (stok_id, jumlah_sisa, processed_date, jumlah_terjual, status)
               VALUES (?, ?, ?, ?, ?)
@@ -139,12 +155,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 status = VALUES(status)
             ");
             $stmtA->bind_param("iisis", $sid, $js, $today, $jt, $status);
-            if ($stmtA->execute()) {
-              $flash = ['type'=>'success','msg'=>'Stok akhir berhasil dicatat.'];
-            } else {
-              $flash = ['type'=>'danger','msg'=>'Gagal mencatat stok akhir: ' . htmlspecialchars($stmtA->error)];
-            }
+            $stmtA->execute();
             $stmtA->close();
+
+            $flash = ['type'=>'success','msg'=>'Stok akhir berhasil dicatat.'];
           }
         }
       }

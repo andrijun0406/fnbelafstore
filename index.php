@@ -16,7 +16,7 @@ if ($role === 'admin') {
 
 $today = date('Y-m-d');
 
-// Query stok hari ini
+// Stok hari ini
 $stmtToday = $conn->prepare("
   SELECT st.id AS stok_id,
          p.id AS produk_id,
@@ -39,7 +39,7 @@ $stmtToday->execute();
 $stok_today = $stmtToday->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmtToday->close();
 
-// Query stok carry-over (belum expired, masih ada sisa)
+// Stok carry-over (belum expired, sisa > 0)
 $stmtCarry = $conn->prepare("
   SELECT st.id AS stok_id,
          p.id AS produk_id,
@@ -69,6 +69,11 @@ $stmtCarry->close();
 
 function jenis_badge(string $jenis): string {
   return $jenis === 'kudapan' ? 'secondary' : 'info';
+}
+
+// Berlaku s.d. = expired_at - 1 hari (tanggal terakhir boleh jual)
+function berlaku_sd(string $expiredAt): string {
+  return date('Y-m-d', strtotime($expiredAt.' -1 day'));
 }
 ?>
 <!doctype html>
@@ -148,7 +153,7 @@ function jenis_badge(string $jenis): string {
                       <span class="fw-semibold">Tersedia</span>
                       <span><?= $sisa ?></span>
                     </div>
-                    <small class="text-muted">Expired: <?= htmlspecialchars($item['expired_at']) ?></small>
+                    <small class="text-muted">Berlaku s.d.: <?= htmlspecialchars(berlaku_sd($item['expired_at'])) ?></small>
                   </div>
                 </div>
               </div>
@@ -195,7 +200,7 @@ function jenis_badge(string $jenis): string {
                       <span><?= $sisa ?></span>
                     </div>
                     <small class="text-muted">
-                      Expired: <?= htmlspecialchars($item['expired_at']) ?><?= $item['terakhir_diproses'] ? ' • update: ' . htmlspecialchars($item['terakhir_diproses']) : '' ?>
+                      Berlaku s.d.: <?= htmlspecialchars(berlaku_sd($item['expired_at'])) ?><?= $item['terakhir_diproses'] ? ' • update: ' . htmlspecialchars($item['terakhir_diproses']) : '' ?>
                     </small>
                   </div>
                 </div>
