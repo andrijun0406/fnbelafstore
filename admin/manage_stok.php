@@ -5,9 +5,9 @@ declare(strict_types=1);
  * Admin - Manage Stok
  * Fitur:
  * - Input stok masuk (produk, tanggal_masuk, jumlah_masuk, opsi override shelf_life_days)
- * - Daftar stok hari ini dan stok aktif
+ * - Daftar stok hari ini dan stok aktif (carry-over sebelum expired)
  * - Pencatatan stok akhir harian (jumlah_sisa, status otomatis, jumlah_terjual)
- * - Cegah duplikasi stok_akhir per hari via unique key (stok_id, processed_date)
+ * - Clear Stok: hapus stok simulasi (seluruh atau sebelum tanggal tertentu) dengan urutan aman
  */
 
 // Debug sementara (MATIKAN di production)
@@ -22,7 +22,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 
 require_once __DIR__ . '/../includes/auth.php';
 if (function_exists('requireRole')) {
-  requireRole('admin'); // Hanya admin
+  requireRole('admin');
 } else {
   checkRole('admin');
 }
@@ -31,6 +31,7 @@ require_once __DIR__ . '/../includes/koneksi.php';
 // Muat partial navbar admin konsisten
 include_once __DIR__ . '/../includes/navbar_admin.php';
 
+// CSRF token
 if (empty($_SESSION['csrf_token'])) {
   $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
@@ -49,6 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } else {
     $action = post('action');
 
+    // 1) Tambah stok masuk
     if ($action === 'create_stok') {
       $produk_id = post('produk_id');
       $tanggal_masuk = post('tanggal_masuk', $today);
@@ -72,14 +74,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$rowJ) {
           $flash = ['type'=>'danger','msg'=>'Produk tidak ditemukan.'];
         } else {
-          // Hitung expired_at
+          // Hitung expired_at (default: kudapan=1 hari, minuman=3 hari)
           if ($sld === null || $sld <= 0) {
             $sld = ($rowJ['jenis'] === 'kudapan') ? 1 : 3; // default bisnis
           }
           $exp = date('Y-m-d', strtotime("$tanggal_masuk +$sld day"));
 
           // Insert stok
-          $stmt = $conn->prepare("INSERT INTO stok (produk_id, tanggal_masuk, jumlah_masuk, shelf_life_days, expired_at) VALUES (?, ?, ?, ?, ?)");
+          $stmt = $conn->prepare("
+            INSERT INTO stok (produk_id, tanggal_masuk, jumlah_masuk, shelf_life_days, expired_at)
+            VALUES (?, ?, ?, ?, ?)
+          ");
           $stmt->bind_param("isiss", $pid, $tanggal_masuk, $jm, $sld, $exp);
           if ($stmt->execute()) {
             $flash = ['type'=>'success','msg'=>'Stok masuk berhasil ditambahkan.'];
@@ -90,6 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
       }
 
+    // 2) Catat stok akhir harian
     } elseif ($action === 'create_stok_akhir') {
       $stok_id = post('stok_id');
       $jumlah_sisa = post('jumlah_sisa');
@@ -100,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $sid = (int)$stok_id;
         $js  = (int)$jumlah_sisa;
 
-        // Ambil stok untuk validasi dan hitung status
+        // Ambil stok untuk validasi & hitung status
         $stmtS = $conn->prepare("SELECT jumlah_masuk, expired_at FROM stok WHERE id = ? LIMIT 1");
         $stmtS->bind_param("i", $sid);
         $stmtS->execute();
@@ -123,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               $status = 'expired';
             }
 
-            // Insert/Upsert stok_akhir untuk tanggal hari ini
+            // Upsert stok_akhir untuk tanggal hari ini
             $stmtA = $conn->prepare("
               INSERT INTO stok_akhir (stok_id, jumlah_sisa, processed_date, jumlah_terjual, status)
               VALUES (?, ?, ?, ?, ?)
@@ -140,6 +146,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $stmtA->close();
           }
+        }
+      }
+
+    // 3) Clear Stok (hapus stok simulasi)
+    } elseif ($action === 'clear_stok') {
+      $confirm_text = post('confirm_text');
+      $reset_ai = post('reset_ai'); // 'yes' or ''
+      $before_date = post('before_date'); // opsional (YYYY-MM-DD)
+
+      if ($confirm_text !== 'CLEAR') {
+        $flash = ['type'=>'danger','msg'=>'Konfirmasi tidak sesuai. Ketik CLEAR untuk melanjutkan.'];
+      } else {
+        try {
+          $conn->begin_transaction();
+
+          if ($before_date !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $before_date)) {
+            // Hapus stok_akhir untuk stok sebelum batas tanggal
+            $stmtDelSa = $conn->prepare("
+              DELETE sa
+              FROM stok_akhir sa
+              JOIN stok st ON st.id = sa.stok_id
+              WHERE st.tanggal_masuk < ?
+            ");
+            $stmtDelSa->bind_param("s", $before_date);
+            $stmtDelSa->execute();
+            $stmtDelSa->close();
+
+            // Hapus stok parent (child sudah dihapus)
+            $stmtDelSt = $conn->prepare("DELETE FROM stok WHERE tanggal_masuk < ?");
+            $stmtDelSt->bind_param("s", $before_date);
+            $stmtDelSt->execute();
+            $stmtDelSt->close();
+          } else {
+            // Full clear seluruh data stok_akhir lalu stok (urutan aman)
+            $conn->query("DELETE FROM stok_akhir");
+            $conn->query("DELETE FROM stok");
+          }
+
+          if ($reset_ai === 'yes') {
+            $conn->query("ALTER TABLE stok_akhir AUTO_INCREMENT = 1");
+            $conn->query("ALTER TABLE stok AUTO_INCREMENT = 1");
+          }
+
+          $conn->commit();
+          $scope = ($before_date !== '') ? "sebelum $before_date" : "seluruh";
+          $flash = ['type'=>'success','msg'=>"Clear stok ($scope) berhasil dijalankan."];
+        } catch (Throwable $e) {
+          $conn->rollback();
+          $flash = ['type'=>'danger','msg'=>'Gagal clear stok: '.htmlspecialchars($e->getMessage())];
         }
       }
     }
@@ -171,7 +226,7 @@ $stmtToday->execute();
 $stok_today = $stmtToday->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmtToday->close();
 
-// Stok aktif (belum expired, sisa > 0 kemarin-kemarin)
+// Stok aktif (carry-over sebelum expired)
 $stmtActive = $conn->prepare("
   SELECT st.id, st.produk_id, st.tanggal_masuk, st.jumlah_masuk, st.expired_at,
          p.nama AS produk_nama, p.jenis,
@@ -209,6 +264,56 @@ $stmtActive->close();
   <?php if ($flash): ?>
     <div class="alert alert-<?= $flash['type'] ?>"><?= htmlspecialchars($flash['msg']) ?></div>
   <?php endif; ?>
+
+  <!-- Header + tombol Clear Stok -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h4 mb-0">Manage Stok</h1>
+    <div class="btn-group">
+      <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#clearStokModal">
+        <i class="bi bi-trash3"></i> Clear Stok
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal Clear Stok -->
+  <div class="modal fade" id="clearStokModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+      <form method="post">
+        <div class="modal-header">
+          <h5 class="modal-title">Konfirmasi Clear Stok</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+          <input type="hidden" name="action" value="clear_stok">
+
+          <div class="alert alert-warning">
+            Tindakan ini akan menghapus data stok (stok_akhir dan stok). Lakukan hanya untuk reset awal perhitungan (pra go-live).
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Hapus sebelum tanggal (opsional)</label>
+            <input type="date" name="before_date" class="form-control">
+            <div class="form-text">Kosongkan untuk menghapus seluruh data stok.</div>
+          </div>
+
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" value="yes" id="resetAi" name="reset_ai">
+            <label class="form-check-label" for="resetAi">Reset nomor urut (AUTO_INCREMENT) setelah hapus</label>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Ketik CLEAR untuk konfirmasi</label>
+            <input type="text" name="confirm_text" class="form-control" placeholder="CLEAR" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+          <button class="btn btn-danger" type="submit">Hapus</button>
+        </div>
+      </form>
+    </div></div>
+  </div>
 
   <!-- Input Stok Masuk -->
   <div class="card shadow-sm mb-4">
