@@ -1,4 +1,3 @@
-
 <?php
 // Gunakan path absolut yang aman:
 include_once __DIR__ . '/../includes/auth.php';
@@ -6,54 +5,115 @@ include_once __DIR__ . '/../includes/auth.php';
 // Batasi akses hanya admin
 checkRole('admin');
 ?>
-<!DOCTYPE html>
+
+<!doctype html>
 <html lang="id">
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Admin Dashboard</title>
-</head>
-<body>
 
-<!-- Header sederhana -->
-<header>
-    <h1>Admin Panel</h1>
-    <nav>
-        <a href="dashboard.php">Home</a> |
-        <a href="manage_users.php">Manage Users</a> |
-        <a href="manage_suppliers.php">Manage Suppliers</a> |
-        <a href="../index.php">View Products</a> |
-        <a href="../logout.php">Logout</a>
+    <!-- Bootstrap 5 CSS (CDN) -->
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+
+    <!-- Bootstrap Icons (opsional) -->
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+    <!-- CSS kustom minimal -->
+    <style>
+      :root {
+        --brand-primary: #0d6efd; /* Sesuaikan jika punya warna brand sendiri */
+      }
+      body { background-color: #f8f9fa; }
+      .navbar-brand { font-weight: 600; }
+    </style>
+  </head>
+  <body class="bg-light">
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+      <div class="container-fluid">
+        <a class="navbar-brand" href="dashboard.php">FnBelaf Store Admin</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                data-bs-target="#topNav" aria-controls="topNav"
+                aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="topNav">
+          <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+            <li class="nav-item">
+              <a class="nav-link active" href="dashboard.php">
+                <i class="bi bi-house-door me-1"></i> Home
+              </a>
+            </li>
+            <li class="nav-item"><a class="nav-link" href="manage_users.php">Manage Users</a></li>
+            <li class="nav-item"><a class="nav-link" href="manage_suppliers.php">Manage Suppliers</a></li>
+            <li class="nav-item"><a class="nav-link" href="../index.php">View Products</a></li>
+          </ul>
+
+          <div class="d-flex">
+            <a class="btn btn-outline-light btn-sm" href="../logout.php">
+              <i class="bi bi-box-arrow-right me-1"></i> Logout
+            </a>
+          </div>
+        </div>
+      </div>
     </nav>
-    <hr>
-</header>
 
-<!-- Konten -->
-<main>
-    <section>
-        <h2>Selamat datang, Admin!</h2>
-        <p>Gunakan menu di atas untuk mengelola data pengguna dan supplier.</p>
-    </section>
+    <!-- Konten -->
+    <main class="container py-4">
+      <!-- Judul halaman -->
+      <div class="mb-4">
+        <h1 class="h3 mb-1">Admin Panel</h1>
+        <p class="text-muted mb-0">
+          Gunakan menu di atas untuk mengelola data pengguna dan supplier.
+        </p>
+      </div>
 
-    <hr>
+      <div class="row g-4">
+        <!-- Kelola Users -->
+        <div class="col-12 col-lg-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h5 class="card-title">Kelola Users</h5>
+              <p class="card-text">
+                Tambah, edit, dan hapus akun pengguna (Admin &amp; Supplier).
+              </p>
+              <a href="manage_users.php" class="btn btn-primary">
+                Buka halaman Manage Users
+              </a>
+            </div>
+          </div>
+        </div>
 
-    <section>
-        <h3>Kelola Users</h3>
-        <p>Tambah, edit, dan hapus akun pengguna (Admin &amp; Supplier).</p>
-        <p><a href="manage_users.php">Buka halaman Manage Users</a></p>
-    </section>
+        <!-- Kelola Suppliers -->
+        <div class="col-12 col-lg-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h5 class="card-title">Kelola Suppliers</h5>
+              <p class="card-text">
+                Tambah, edit, dan hubungkan supplier dengan akun login.
+              </p>
+              <a href="manage_suppliers.php" class="btn btn-primary">
+                Buka halaman Manage Suppliers
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
 
-    <section>
-        <h3>Kelola Suppliers</h3>
-        <p>Tambah, edit, dan hubungkan supplier dengan akun login.</p>
-        <p><a href="manage_suppliers.php">Buka halaman Manage Suppliers</a></p>
-    </section>
-</main>
+    <!-- Footer -->
+    <footer class="border-top mt-4">
+      <div class="container py-3">
+        <small class="text-muted">&copy; <?= date('Y'); ?> FnBelaf Store</small>
+      </div>
+    </footer>
 
-<!-- Footer sederhana -->
-<footer>
-    <hr>
-    <small>&copy; <?php echo date('Y'); ?> FnBelaf Store</small>
-</footer>
-
-</body>
+    <!-- Bootstrap 5 JS Bundle (termasuk Popper) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
 </html>
