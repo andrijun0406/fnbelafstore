@@ -16,7 +16,7 @@ if ($role === 'admin') {
 
 $today = date('Y-m-d');
 
-// Stok hari ini
+// Stok hari ini (exclude yang sudah dicatat EOD dengan status expired)
 $stmtToday = $conn->prepare("
   SELECT st.id AS stok_id,
          p.id AS produk_id,
@@ -30,8 +30,11 @@ $stmtToday = $conn->prepare("
   FROM stok st
   JOIN produk p ON p.id = st.produk_id
   JOIN supplier s ON s.id = p.supplier_id
-  LEFT JOIN stok_akhir sa ON sa.stok_id = st.id AND sa.processed_date = ?
+  LEFT JOIN stok_akhir sa 
+         ON sa.stok_id = st.id 
+        AND sa.processed_date = ?
   WHERE st.tanggal_masuk = ?
+    AND (sa.status IS NULL OR sa.status <> 'expired')
   ORDER BY p.nama ASC
 ");
 $stmtToday->bind_param("ss", $today, $today);
@@ -39,7 +42,7 @@ $stmtToday->execute();
 $stok_today = $stmtToday->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmtToday->close();
 
-// Stok carry-over (belum expired, sisa > 0)
+// Stok carry-over (belum expired, ada sisa, dan bukan status expired pada catatan terakhir)
 $stmtCarry = $conn->prepare("
   SELECT st.id AS stok_id,
          p.id AS produk_id,
@@ -50,27 +53,31 @@ $stmtCarry = $conn->prepare("
          st.jumlah_masuk,
          st.expired_at,
          COALESCE(sa.jumlah_sisa, st.jumlah_masuk) AS sisa_terkini,
-         sa.processed_date AS terakhir_diproses
+         sa.processed_date AS terakhir_diproses,
+         sa.status AS status_terakhir
   FROM stok st
   JOIN produk p ON p.id = st.produk_id
   JOIN supplier s ON s.id = p.supplier_id
   LEFT JOIN stok_akhir sa 
-    ON sa.stok_id = st.id 
-   AND sa.processed_date = (
-     SELECT MAX(sa2.processed_date) FROM stok_akhir sa2 WHERE sa2.stok_id = st.id
-   )
+         ON sa.stok_id = st.id 
+        AND sa.processed_date = (
+             SELECT MAX(sa2.processed_date) 
+             FROM stok_akhir sa2 
+             WHERE sa2.stok_id = st.id
+           )
   WHERE CURDATE() < st.expired_at
     AND COALESCE(sa.jumlah_sisa, st.jumlah_masuk) > 0
+    AND (sa.status IS NULL OR sa.status <> 'expired')
   ORDER BY st.expired_at ASC, p.nama ASC
 ");
 $stmtCarry->execute();
 $stok_carry = $stmtCarry->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmtCarry->close();
 
+// Utility kecil
 function jenis_badge(string $jenis): string {
   return $jenis === 'kudapan' ? 'secondary' : 'info';
 }
-
 // Berlaku s.d. = expired_at - 1 hari (tanggal terakhir boleh jual)
 function berlaku_sd(string $expiredAt): string {
   return date('Y-m-d', strtotime($expiredAt.' -1 day'));
