@@ -94,22 +94,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $products = [];
 $total_products = 0;
 if ($supplier) {
+  // Simpan supplier_id ke variabel untuk bind_param (wajib variabel, bukan ekspresi)
+  $supId = (int)$supplier['id'];
+
   // Hitung total produk supplier
   $stmtCnt = $conn->prepare("SELECT COUNT(*) AS c FROM produk WHERE supplier_id = ?");
-  $stmtCnt->bind_param("i", (int)$supplier['id']);
+  $stmtCnt->bind_param("i", $supId);
   $stmtCnt->execute();
-  $total_products = (int)$stmtCnt->get_result()->fetch_assoc()['c'];
+  $rowCnt = $stmtCnt->get_result()->fetch_assoc();
+  $total_products = isset($rowCnt['c']) ? (int)$rowCnt['c'] : 0;
   $stmtCnt->close();
 
   // Ambil 5 produk terbaru
+  $limitPreview = 5; // gunakan variabel agar bisa di-pass by reference jika diperlukan
   $stmtP = $conn->prepare("
     SELECT id, nama, jenis, harga_supplier, margin_fnb, harga_jual
     FROM produk
     WHERE supplier_id = ?
     ORDER BY id DESC
-    LIMIT 5
+    LIMIT ?
   ");
-  $stmtP->bind_param("i", (int)$supplier['id']);
+  // Note: beberapa versi MySQLi tidak mendukung parameter di LIMIT.
+  // Jika server Anda menolak, ganti LIMIT ? dengan LIMIT 5 langsung.
+  $stmtP->bind_param("ii", $supId, $limitPreview);
   $stmtP->execute();
   $products = $stmtP->get_result()->fetch_all(MYSQLI_ASSOC);
   $stmtP->close();
@@ -179,7 +186,7 @@ if ($supplier) {
               </div>
             </div>
           </div>
-          <!-- Ruang untuk metrik lain (mis. penjualan harian) akan ditambahkan kemudian -->
+          <!-- Ruang untuk metrik lain akan ditambahkan kemudian -->
         </div>
 
         <!-- Keamanan Akun: Reset Password -->
