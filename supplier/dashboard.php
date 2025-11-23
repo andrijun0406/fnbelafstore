@@ -30,6 +30,9 @@ if (function_exists('requireRole')) {
 }
 require_once __DIR__ . '/../includes/koneksi.php';
 
+// Muat partial navbar supplier konsisten
+include_once __DIR__ . '/../includes/navbar_supplier.php';
+
 // CSRF token
 if (empty($_SESSION['csrf_token'])) {
   $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -94,7 +97,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $products = [];
 $total_products = 0;
 if ($supplier) {
-  // Simpan supplier_id ke variabel untuk bind_param (wajib variabel, bukan ekspresi)
   $supId = (int)$supplier['id'];
 
   // Hitung total produk supplier
@@ -106,7 +108,7 @@ if ($supplier) {
   $stmtCnt->close();
 
   // Ambil 5 produk terbaru
-  $limitPreview = 5; // gunakan variabel agar bisa di-pass by reference jika diperlukan
+  $limitPreview = 5; // jika server tidak mendukung parameter LIMIT, ubah query jadi LIMIT 5 langsung
   $stmtP = $conn->prepare("
     SELECT id, nama, jenis, harga_supplier, margin_fnb, harga_jual
     FROM produk
@@ -114,8 +116,6 @@ if ($supplier) {
     ORDER BY id DESC
     LIMIT ?
   ");
-  // Note: beberapa versi MySQLi tidak mendukung parameter di LIMIT.
-  // Jika server Anda menolak, ganti LIMIT ? dengan LIMIT 5 langsung.
   $stmtP->bind_param("ii", $supId, $limitPreview);
   $stmtP->execute();
   $products = $stmtP->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -135,22 +135,8 @@ if ($supplier) {
     </style>
   </head>
   <body class="bg-light">
-    <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-      <div class="container-fluid">
-        <a class="navbar-brand" href="#">F &amp; B Elaf Store Supplier</a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#topNav">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="topNav">
-          <ul class="navbar-nav me-auto">
-            <li class="nav-item"><a class="nav-link active" href="dashboard.php">Dashboard</a></li>
-            <li class="nav-item"><a class="nav-link" href="manage_produk.php">Manage Produk</a></li>
-          </ul>
-          <a class="btn btn-outline-light btn-sm" href="../logout.php"><i class="bi bi-box-arrow-right me-1"></i> Logout</a>
-        </div>
-      </div>
-    </nav>
+
+    <?php render_supplier_navbar(); ?>
 
     <main class="container py-4">
       <?php if ($flash): ?>
@@ -162,18 +148,16 @@ if ($supplier) {
           Akun Anda belum ditautkan ke data supplier. Mohon hubungi admin untuk penautan agar dapat mengelola produk.
         </div>
       <?php else: ?>
-        <!-- Header -->
         <div class="d-flex justify-content-between align-items-center mb-3">
           <div>
             <h1 class="h4 mb-0">Halo, <?= htmlspecialchars($supplier['nama']) ?></h1>
             <small class="text-muted">Ringkasan dan pengaturan akun.</small>
           </div>
           <div class="btn-group">
-            <a class="btn btn-primary" href="manage_produk.php"><i class="bi bi-box-seam me-1"></i> Kelola Produk</a>
+            <a class="btn btn-primary" href="/supplier/manage_produk.php"><i class="bi bi-box-seam me-1"></i> Kelola Produk</a>
           </div>
         </div>
 
-        <!-- Ringkasan -->
         <div class="row g-3 mb-4">
           <div class="col-12 col-md-6 col-xl-3">
             <div class="card stat-card shadow-sm">
@@ -186,10 +170,8 @@ if ($supplier) {
               </div>
             </div>
           </div>
-          <!-- Ruang untuk metrik lain akan ditambahkan kemudian -->
         </div>
 
-        <!-- Keamanan Akun: Reset Password -->
         <div class="card shadow-sm mb-4">
           <div class="card-header">Keamanan Akun</div>
           <div class="card-body">
@@ -221,11 +203,10 @@ if ($supplier) {
           </div>
         </div>
 
-        <!-- Pratinjau Produk Terbaru -->
         <div class="card shadow-sm">
           <div class="card-header d-flex justify-content-between align-items-center">
             <span class="fw-semibold">Produk Terbaru</span>
-            <a class="btn btn-sm btn-outline-primary" href="manage_produk.php">
+            <a class="btn btn-sm btn-outline-primary" href="/supplier/manage_produk.php">
               <i class="bi bi-pencil-square me-1"></i> Kelola
             </a>
           </div>

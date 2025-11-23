@@ -31,6 +31,9 @@ if (function_exists('requireRole')) {
 }
 require_once __DIR__ . '/../includes/koneksi.php';
 
+// Muat partial navbar supplier konsisten
+include_once __DIR__ . '/../includes/navbar_supplier.php';
+
 // CSRF token
 if (empty($_SESSION['csrf_token'])) {
   $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -207,22 +210,8 @@ $total_pages = (int)ceil($total / $limit);
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
   </head>
   <body class="bg-light">
-    <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-      <div class="container-fluid">
-        <a class="navbar-brand" href="dashboard.php">F &amp; B Elaf Store Supplier</a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#topNav">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="topNav">
-          <ul class="navbar-nav me-auto">
-            <li class="nav-item"><a class="nav-link" href="dashboard.php">Dashboard</a></li>
-            <li class="nav-item"><a class="nav-link active" href="manage_produk.php">Manage Produk</a></li>
-          </ul>
-          <a class="btn btn-outline-light btn-sm" href="../logout.php"><i class="bi bi-box-arrow-right me-1"></i> Logout</a>
-        </div>
-      </div>
-    </nav>
+
+    <?php render_supplier_navbar(); ?>
 
     <main class="container py-4">
       <?php if ($flash): ?>

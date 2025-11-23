@@ -16,7 +16,7 @@ if (!function_exists('render_supplier_navbar')) {
         </button>
         <div class="collapse navbar-collapse" id="topNav">
           <ul class="navbar-nav me-auto">
-            <li class="nav-item"><a class="nav-link<?= nav_active('/supplier/dashboard.php') ?>" href="/supplier/dashboard.php">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link<?= nav_active('/supplier/dashboard.php') ?>" href="/supplier/dashboard.php"><i class="bi bi-house-door me-1"></i> Home</a></li>
             <li class="nav-item"><a class="nav-link<?= nav_active('/supplier/manage_produk.php') ?>" href="/supplier/manage_produk.php">Manage Produk</a></li>
             <li class="nav-item"><a class="nav-link<?= nav_active('/index.php') ?>" href="/index.php">View Etalase</a></li>
           </ul>
