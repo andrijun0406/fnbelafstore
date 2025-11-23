@@ -317,7 +317,7 @@ $total_pages = (int)ceil($total / $limit);
                             <label class="form-label">Supplier</label>
                             <select class="form-select" name="supplier_id" required>
                               <?php foreach ($suppliers as $s): ?>
-                                <option value="<?= $s['id'] ?>" <?= $s['id']===$p['supplier_id']?'selected':'' ?>>
+                                <option value="<?= (int)$s['id'] ?>" <?= ((int)$s['id'] === (int)$p['supplier_id']) ? 'selected' : '' ?>>
                                   <?= htmlspecialchars($s['nama']) ?> <?= $s['username'] ? '@'.htmlspecialchars($s['username']) : '(no user)' ?>
                                 </option>
                               <?php endforeach; ?>
