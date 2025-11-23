@@ -58,6 +58,8 @@ if (function_exists('requireRole')) {
             </li>
             <li class="nav-item"><a class="nav-link" href="manage_users.php">Manage Users</a></li>
             <li class="nav-item"><a class="nav-link" href="manage_suppliers.php">Manage Suppliers</a></li>
+            <!-- Tambahan: Kelola Stok -->
+            <li class="nav-item"><a class="nav-link" href="manage_stok.php">Manage Stok</a></li>
             <li class="nav-item"><a class="nav-link" href="../index.php">View Products</a></li>
           </ul>
 
@@ -75,29 +77,48 @@ if (function_exists('requireRole')) {
       <div class="mb-4">
         <h1 class="h3 mb-1">Admin Panel</h1>
         <p class="text-muted mb-0">
-          Gunakan menu di atas untuk mengelola data pengguna dan supplier.
+          Gunakan menu di atas untuk mengelola users, suppliers, dan stok harian.
         </p>
       </div>
 
       <div class="row g-4">
         <!-- Kelola Users -->
-        <div class="col-12 col-lg-6">
+        <div class="col-12 col-lg-4">
           <div class="card shadow-sm h-100">
             <div class="card-body">
               <h5 class="card-title">Kelola Users</h5>
               <p class="card-text">Tambah, edit, dan hapus akun pengguna (Admin &amp; Supplier).</p>
-              <a href="manage_users.php" class="btn btn-primary">Buka halaman Manage Users</a>
+              <a href="manage_users.php" class="btn btn-primary">
+                <i class="bi bi-people me-1"></i> Buka halaman Manage Users
+              </a>
             </div>
           </div>
         </div>
 
         <!-- Kelola Suppliers -->
-        <div class="col-12 col-lg-6">
+        <div class="col-12 col-lg-4">
           <div class="card shadow-sm h-100">
             <div class="card-body">
               <h5 class="card-title">Kelola Suppliers</h5>
               <p class="card-text">Tambah, edit, dan hubungkan supplier dengan akun login.</p>
-              <a href="manage_suppliers.php" class="btn btn-primary">Buka halaman Manage Suppliers</a>
+              <a href="manage_suppliers.php" class="btn btn-primary">
+                <i class="bi bi-building me-1"></i> Buka halaman Manage Suppliers
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tambahan: Kelola Stok -->
+        <div class="col-12 col-lg-4">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h5 class="card-title">Kelola Stok</h5>
+              <p class="card-text">
+                Catat stok masuk harian, masa expired, dan stok akhir (sisa, terjual, status).
+              </p>
+              <a href="manage_stok.php" class="btn btn-primary">
+                <i class="bi bi-box-seam me-1"></i> Buka halaman Manage Stok
+              </a>
             </div>
           </div>
         </div>
