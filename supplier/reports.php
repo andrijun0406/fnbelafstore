@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-// Debug sementara
+// Debug sementara (MATIKAN di production)
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
@@ -20,9 +20,11 @@ if (empty($_SESSION['csrf_token'])) {
 }
 
 function get($k,$d=''){ return isset($_GET[$k]) ? trim($_GET[$k]) : $d; }
+function h($s){ return htmlspecialchars((string)$s); }
+
 $user_id = (int)($_SESSION['user_id'] ?? 0);
 
-// Dapatkan supplier yang tertaut
+// Dapatkan supplier yang tertaut ke user login
 $stmtSup = $conn->prepare("SELECT id, nama FROM supplier WHERE user_id = ? LIMIT 1");
 $stmtSup->bind_param("i", $user_id);
 $stmtSup->execute();
@@ -37,12 +39,19 @@ $year  = (int) get('year',  date('Y'));
 $month = ($month >=1 && $month <=12) ? $month : (int)date('n');
 $year  = ($year >=1970 && $year <=2100) ? $year : (int)date('Y');
 
+// Filter referensi minggu untuk panel pembayaran mingguan
+$ref_date = get('ref_date', $today);
+// Hitung minggu (Senin s.d. Minggu) untuk referensi tampilan
+$ref = DateTime::createFromFormat('Y-m-d', $ref_date) ?: new DateTime($today);
+$week_start = (clone $ref)->modify('monday this week')->format('Y-m-d');
+$week_end   = (clone $ref)->modify('sunday this week')->format('Y-m-d');
+
 if (!$supplier) {
   $flash = ['type'=>'danger','msg'=>'Akun supplier belum ditautkan.'];
 } else {
   $supId = (int)$supplier['id'];
 
-  // Daily aggregates untuk supplier
+  // Daily aggregates untuk supplier (penjualan dan keuntungan)
   $stmtDaily = $conn->prepare("
     SELECT 
       SUM(sa.jumlah_terjual) AS units,
@@ -110,18 +119,31 @@ if (!$supplier) {
   $monthly_products = $stmtMonthlyProducts->get_result()->fetch_all(MYSQLI_ASSOC);
   $stmtMonthlyProducts->close();
 
-  // Status pembayaran (opsional ditampilkan ke supplier)
-  $payments = $conn->prepare("
-    SELECT sp.period_type, sp.period_date, sp.amount, sp.status, sp.paid_at
-    FROM supplier_payments sp
-    WHERE sp.supplier_id = ?
-    ORDER BY sp.period_date DESC
+  // Panel pembayaran mingguan (pending & histori)
+  // Catatan: admin akan generate payment mingguan dan menandai sebagai paid, supplier hanya melihat statusnya
+  $stmtWeeklyPending = $conn->prepare("
+    SELECT period_date, amount, status, paid_at
+    FROM supplier_payments
+    WHERE supplier_id = ? AND period_type = 'weekly' AND status = 'pending'
+    ORDER BY period_date DESC
     LIMIT 20
   ");
-  $payments->bind_param("i", $supId);
-  $payments->execute();
-  $supplier_payments = $payments->get_result()->fetch_all(MYSQLI_ASSOC);
-  $payments->close();
+  $stmtWeeklyPending->bind_param("i", $supId);
+  $stmtWeeklyPending->execute();
+  $weekly_pending = $stmtWeeklyPending->get_result()->fetch_all(MYSQLI_ASSOC);
+  $stmtWeeklyPending->close();
+
+  $stmtWeeklyHistory = $conn->prepare("
+    SELECT period_date, amount, status, paid_at
+    FROM supplier_payments
+    WHERE supplier_id = ? AND period_type = 'weekly' AND status = 'paid'
+    ORDER BY period_date DESC
+    LIMIT 20
+  ");
+  $stmtWeeklyHistory->bind_param("i", $supId);
+  $stmtWeeklyHistory->execute();
+  $weekly_history = $stmtWeeklyHistory->get_result()->fetch_all(MYSQLI_ASSOC);
+  $stmtWeeklyHistory->close();
 }
 ?>
 <!doctype html>
@@ -138,23 +160,23 @@ if (!$supplier) {
 
     <main class="container py-4">
       <?php if ($flash): ?>
-        <div class="alert alert-<?= $flash['type'] ?>"><?= htmlspecialchars($flash['msg']) ?></div>
+        <div class="alert alert-<?= h($flash['type']) ?>"><?= h($flash['msg']) ?></div>
       <?php endif; ?>
 
       <?php if ($supplier): ?>
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h1 class="h4 mb-0">Laporan - Supplier</h1>
-          <span class="text-muted">Supplier: <?= htmlspecialchars($supplier['nama']) ?></span>
+          <span class="text-muted">Supplier: <?= h($supplier['nama']) ?></span>
         </div>
 
-        <!-- Filter Harian -->
+        <!-- Laporan Harian -->
         <div class="card shadow-sm mb-3">
           <div class="card-header">Laporan Harian</div>
           <div class="card-body">
             <form class="row g-3" method="get">
               <div class="col-md-4">
                 <label class="form-label">Tanggal</label>
-                <input type="date" name="date" value="<?= htmlspecialchars($daily_date) ?>" class="form-control" required>
+                <input type="date" name="date" value="<?= h($daily_date) ?>" class="form-control" required>
               </div>
               <div class="col-md-2 d-flex align-items-end">
                 <button class="btn btn-outline-secondary" type="submit">Terapkan</button>
@@ -198,8 +220,8 @@ if (!$supplier) {
                     <tr><td colspan="5" class="text-center text-muted">Tidak ada data.</td></tr>
                   <?php else: foreach ($daily_products as $r): ?>
                     <tr>
-                      <td><?= htmlspecialchars($r['produk_nama']) ?></td>
-                      <td><span class="badge text-bg-secondary"><?= htmlspecialchars($r['jenis']) ?></span></td>
+                      <td><?= h($r['produk_nama']) ?></td>
+                      <td><span class="badge text-bg-secondary"><?= h($r['jenis']) ?></span></td>
                       <td class="text-end"><?= (int)$r['units'] ?></td>
                       <td class="text-end">Rp <?= number_format((float)$r['revenue'], 2, ',', '.') ?></td>
                       <td class="text-end">Rp <?= number_format((float)$r['supplier_profit'], 2, ',', '.') ?></td>
@@ -211,7 +233,7 @@ if (!$supplier) {
           </div>
         </div>
 
-        <!-- Filter Bulanan -->
+        <!-- Laporan Bulanan -->
         <div class="card shadow-sm mb-3">
           <div class="card-header">Laporan Bulanan</div>
           <div class="card-body">
@@ -220,7 +242,7 @@ if (!$supplier) {
                 <label class="form-label">Bulan</label>
                 <select name="month" class="form-select">
                   <?php for ($m=1;$m<=12;$m++): ?>
-                  <option value="<?= $m ?>" <?= $m===$month?'selected':'' ?>><?= $m ?></option>
+                    <option value="<?= $m ?>" <?= $m===$month?'selected':'' ?>><?= $m ?></option>
                   <?php endfor; ?>
                 </select>
               </div>
@@ -270,8 +292,8 @@ if (!$supplier) {
                     <tr><td colspan="5" class="text-center text-muted">Tidak ada data.</td></tr>
                   <?php else: foreach ($monthly_products as $r): ?>
                     <tr>
-                      <td><?= htmlspecialchars($r['produk_nama']) ?></td>
-                      <td><span class="badge text-bg-secondary"><?= htmlspecialchars($r['jenis']) ?></span></td>
+                      <td><?= h($r['produk_nama']) ?></td>
+                      <td><span class="badge text-bg-secondary"><?= h($r['jenis']) ?></span></td>
                       <td class="text-end"><?= (int)$r['units'] ?></td>
                       <td class="text-end">Rp <?= number_format((float)$r['revenue'], 2, ',', '.') ?></td>
                       <td class="text-end">Rp <?= number_format((float)$r['supplier_profit'], 2, ',', '.') ?></td>
@@ -283,36 +305,88 @@ if (!$supplier) {
           </div>
         </div>
 
-        <!-- Status Pembayaran (opsional) -->
-        <div class="card shadow-sm">
-          <div class="card-header">Status Pembayaran (Terakhir)</div>
+        <!-- Panel Pembayaran Mingguan -->
+        <div class="card shadow-sm mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Pembayaran Mingguan</span>
+            <form class="d-flex align-items-center gap-2" method="get">
+              <input type="hidden" name="date" value="<?= h($daily_date) ?>">
+              <input type="hidden" name="month" value="<?= (int)$month ?>">
+              <input type="hidden" name="year" value="<?= (int)$year ?>">
+              <label class="form-label mb-0">Referensi Minggu</label>
+              <input type="date" name="ref_date" value="<?= h($ref_date) ?>" class="form-control" style="max-width:180px">
+              <button class="btn btn-outline-secondary" type="submit">Terapkan</button>
+            </form>
+          </div>
           <div class="card-body">
-            <div class="table-responsive">
-              <table class="table table-striped table-hover">
-                <thead class="table-light">
-                  <tr>
-                    <th>Periode</th>
-                    <th>Tanggal</th>
-                    <th class="text-end">Jumlah</th>
-                    <th>Status</th>
-                    <th>Dibayar Pada</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <?php if (empty($supplier_payments)): ?>
-                    <tr><td colspan="5" class="text-center text-muted">Belum ada catatan pembayaran.</td></tr>
-                  <?php else: foreach ($supplier_payments as $pp): ?>
-                    <tr>
-                      <td><?= htmlspecialchars($pp['period_type']) ?></td>
-                      <td><?= htmlspecialchars($pp['period_date']) ?></td>
-                      <td class="text-end">Rp <?= number_format((float)$pp['amount'], 2, ',', '.') ?></td>
-                      <td><span class="badge text-bg-<?= $pp['status']==='paid'?'success':'warning' ?>"><?= htmlspecialchars($pp['status']) ?></span></td>
-                      <td><?= htmlspecialchars($pp['paid_at'] ?? '-') ?></td>
-                    </tr>
-                  <?php endforeach; endif; ?>
-                </tbody>
-              </table>
+            <div class="mb-2 text-muted">
+              Periode minggu ini: <?= h($week_start) ?> s.d. <?= h($week_end) ?>.
             </div>
+
+            <div class="row g-3">
+              <div class="col-12 col-lg-6">
+                <div class="card">
+                  <div class="card-header">Pending</div>
+                  <div class="card-body p-0">
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                          <tr>
+                            <th>Tanggal (Akhir Minggu)</th>
+                            <th class="text-end">Jumlah</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <?php if (empty($weekly_pending)): ?>
+                            <tr><td colspan="3" class="text-center text-muted">Tidak ada pembayaran pending.</td></tr>
+                          <?php else: foreach ($weekly_pending as $pp): ?>
+                            <tr>
+                              <td><?= h($pp['period_date']) ?></td>
+                              <td class="text-end">Rp <?= number_format((float)$pp['amount'], 2, ',', '.') ?></td>
+                              <td><span class="badge text-bg-warning"><?= h($pp['status']) ?></span></td>
+                            </tr>
+                          <?php endforeach; endif; ?>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12 col-lg-6">
+                <div class="card">
+                  <div class="card-header">Histori (Paid)</div>
+                  <div class="card-body p-0">
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                          <tr>
+                            <th>Tanggal (Akhir Minggu)</th>
+                            <th class="text-end">Jumlah</th>
+                            <th>Status</th>
+                            <th>Dibayar Pada</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <?php if (empty($weekly_history)): ?>
+                            <tr><td colspan="4" class="text-center text-muted">Belum ada histori paid.</td></tr>
+                          <?php else: foreach ($weekly_history as $pp): ?>
+                            <tr>
+                              <td><?= h($pp['period_date']) ?></td>
+                              <td class="text-end">Rp <?= number_format((float)$pp['amount'], 2, ',', '.') ?></td>
+                              <td><span class="badge text-bg-success"><?= h($pp['status']) ?></span></td>
+                              <td><?= h($pp['paid_at'] ?? '-') ?></td>
+                            </tr>
+                          <?php endforeach; endif; ?>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
 
