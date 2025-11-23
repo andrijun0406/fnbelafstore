@@ -8,7 +8,8 @@ checkRole('admin');
 <head>
     <meta charset="UTF-8">
     <title>Admin Dashboard</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@ss/bootstrap.min.css
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/cssin.css
 </head>
 <body>
 <!-- Navbar -->
@@ -20,26 +21,33 @@ checkRole('admin');
     </button>
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav me-auto">
-        <li class="nav-item">dashboard.phpHome</a></li>
-        <li class="nav-item">manage_users.phpManage Users</a></li>
-        <li class="nav-item"><a class="navers.phpManage Suppliers</a></li>
-        <li class="nav-item">../index.phpView Products</a></li>
+        <li class="nav-item">
+            <a class="nav-link active" href="i>
+        <li class="nav-item">
+            <a href="manage_users.php">Kelola Users</a>
+        </li>
+        <li class="nav-item">
+            <a href="manage_suppliers.php">Kelola Suppliers</a>
+        </li>
+        <li class="nav-item">
+            <a href="../index.php">View Products</a>
+        </li>
       </ul>
-      ../logout.phpLogout</a>
+      <a href="/logout.php">Logout</a>
     </div>
   </div>
 </nav>
 
 <!-- Content -->
 <div class="container mt-4">
-    <div class="text-center">
+    < class="text-center">
         <h1 class="mb-4">Selamat datang, Admin!</h1>
         <p class="lead">Gunakan menu di atas untuk mengelola data pengguna dan supplier.</p>
     </div>
 
     <!-- Cards -->
     <div class="row mt-5">
-        <div class="col-md-6">
+        <div class="col-md-6 mb-3">
             <div class="card shadow-sm">
                 <div class="card-body text-center">
                     <h5 class="card-title">Kelola Users</h5>
@@ -48,17 +56,19 @@ checkRole('admin');
                 </div>
             </div>
         </div>
-        <div class="col-md-6">
+        <div class="col-md-6 mb-3">
             <div class="card shadow-sm">
                 <div class="card-body text-center">
                     <h5 class="card-title">Kelola Suppliers</h5>
                     <p class="card-text">Tambah, edit, dan hubungkan supplier dengan akun login.</p>
-                    <a href="manage_suppliers.php" class="btn btn            </div>
+                    manage_suppliers.phpManage Suppliers</a>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@/bootstrap.bundle.min.js</script>
+<!-- Bootstrap JS -->
+https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js</script>
 </body>
 </html>
