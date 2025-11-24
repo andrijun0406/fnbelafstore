@@ -63,9 +63,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Login - F &amp; B ELAF Store</title>
+    <title>Login - F &amp; B KAF Bekasi</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="/assets/css/brand.css">
     <style>
       body { background-color: #f8f9fa; }
       .login-card { max-width: 420px; width: 100%; }
@@ -76,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <!-- Header kecil publik: tombol Home (Etalase) -->
     <header class="py-3 border-bottom bg-white">
       <div class="container d-flex justify-content-between align-items-center">
-        <div class="brand h5 mb-0">F &amp; B ELAF Store</div>
+        <div class="brand h5 mb-0">F &amp; B KAF Bekasi</div>
         <a href="/index.php" class="btn btn-outline-primary btn-sm">
           <i class="bi bi-house-door me-1"></i> Home Etalase
         </a>
@@ -129,6 +130,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
       </div>
     </div>
+
+    <footer class="border-top bg-white">
+      <div class="container py-3">
+        <small class="text-muted">&copy; <?= date('Y'); ?> F &amp; B KAF Bekasi</small>
+      </div>
+    </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   </body>
