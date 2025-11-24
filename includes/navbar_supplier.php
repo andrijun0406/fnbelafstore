@@ -11,7 +11,7 @@ if (!function_exists('render_supplier_navbar')) {
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
       <div class="container-fluid">
         <a class="navbar-brand" href="/supplier/dashboard.php">
-          <img src="/assets/images/logo/logo_fnb_kaf_full.png"
+          <img src="/assets/images/logo/logo_fnb_dark.png"
               alt="F &amp; B KAF Bekasi logo" class="brand-logo brand-on-dark">
           <span class="ms-2">F &amp; B KAF Bekasi</span>
         </a>
