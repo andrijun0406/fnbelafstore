@@ -5,6 +5,8 @@ declare(strict_types=1);
  * Manage Produk (Supplier)
  * - Hanya untuk role supplier
  * - CRUD produk milik supplier yang tertaut ke user login
+ * - Supplier hanya boleh melihat/mengubah: nama, jenis, harga_supplier
+ * - Margin FnB TIDAK ditampilkan ke supplier dan TIDAK bisa diubah oleh supplier
  * - Harga jual adalah kolom generated (harga_supplier + margin_fnb)
  * - Cegah delete jika ada stok terkait
  */
@@ -57,7 +59,7 @@ if ($user_id > 0) {
   $stmtSup->close();
 }
 
-// Proses aksi CRUD
+// Proses aksi CRUD (tanpa margin_fnb)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $csrf = post('csrf_token');
   if (!hash_equals($_SESSION['csrf_token'], $csrf)) {
@@ -72,17 +74,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $nama = post('nama');
       $jenis = post('jenis');
       $harga_supplier = post('harga_supplier');
-      $margin_fnb = post('margin_fnb');
 
       if ($nama === '' || !in_array($jenis, ['kudapan','minuman'], true)) {
         $flash = ['type'=>'danger','msg'=>'Nama/jenis tidak valid.'];
-      } elseif (!is_numeric($harga_supplier) || !is_numeric($margin_fnb)) {
-        $flash = ['type'=>'danger','msg'=>'Harga dan margin harus numerik.'];
+      } elseif (!is_numeric($harga_supplier)) {
+        $flash = ['type'=>'danger','msg'=>'Harga supplier harus numerik.'];
       } else {
         $hs = (float)$harga_supplier;
-        $mf = (float)$margin_fnb;
-        $stmt = $conn->prepare("INSERT INTO produk (nama, jenis, harga_supplier, margin_fnb, supplier_id) VALUES (?, ?, ?, ?, ?)");
-        $stmt->bind_param("ssddi", $nama, $jenis, $hs, $mf, $supplier_id);
+        // margin_fnb diset 0 (placeholder) — hanya admin yang boleh mengisi margin
+        $stmt = $conn->prepare("INSERT INTO produk (nama, jenis, harga_supplier, margin_fnb, supplier_id) VALUES (?, ?, ?, 0, ?)");
+        $stmt->bind_param("ssdi", $nama, $jenis, $hs, $supplier_id);
         if ($stmt->execute()) {
           $flash = ['type'=>'success','msg'=>'Produk berhasil ditambahkan.'];
         } else {
@@ -96,27 +97,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $nama = post('nama');
       $jenis = post('jenis');
       $harga_supplier = post('harga_supplier');
-      $margin_fnb = post('margin_fnb');
 
       if (!ctype_digit($id)) {
         $flash = ['type'=>'danger','msg'=>'ID produk tidak valid.'];
       } elseif ($nama === '' || !in_array($jenis, ['kudapan','minuman'], true)) {
         $flash = ['type'=>'danger','msg'=>'Nama/jenis tidak valid.'];
-      } elseif (!is_numeric($harga_supplier) || !is_numeric($margin_fnb)) {
-        $flash = ['type'=>'danger','msg'=>'Harga dan margin harus numerik.'];
+      } elseif (!is_numeric($harga_supplier)) {
+        $flash = ['type'=>'danger','msg'=>'Harga supplier harus numerik.'];
       } else {
         $pid = (int)$id;
-        $hs = (float)$harga_supplier;
-        $mf = (float)$margin_fnb;
+        $hs  = (float)$harga_supplier;
 
-        $stmt = $conn->prepare("UPDATE produk SET nama = ?, jenis = ?, harga_supplier = ?, margin_fnb = ? WHERE id = ? AND supplier_id = ?");
-        $stmt->bind_param("ssddii", $nama, $jenis, $hs, $mf, $pid, $supplier_id);
+        // Supplier TIDAK boleh mengubah margin_fnb
+        $stmt = $conn->prepare("UPDATE produk SET nama = ?, jenis = ?, harga_supplier = ? WHERE id = ? AND supplier_id = ?");
+        $stmt->bind_param("ssdii", $nama, $jenis, $hs, $pid, $supplier_id);
         $stmt->execute();
-        if ($stmt->affected_rows > 0) {
-          $flash = ['type'=>'success','msg'=>'Produk diperbarui.'];
-        } else {
-          $flash = ['type'=>'warning','msg'=>'Tidak ada perubahan atau produk bukan milik Anda.'];
-        }
+        $flash = ($stmt->affected_rows > 0)
+          ? ['type'=>'success','msg'=>'Produk diperbarui.']
+          : ['type'=>'warning','msg'=>'Tidak ada perubahan atau produk bukan milik Anda.'];
         $stmt->close();
       }
 
@@ -157,7 +155,7 @@ $page = max(1, (int)get('page', '1'));
 $limit = 10;
 $offset = ($page - 1) * $limit;
 
-// Ambil produk milik supplier
+// Ambil produk milik supplier (tanpa mengembalikan margin_fnb)
 $products = [];
 $total = 0;
 if ($supplier) {
@@ -170,7 +168,7 @@ if ($supplier) {
     $stmtCnt->close();
 
     $stmtP = $conn->prepare("
-      SELECT id, nama, jenis, harga_supplier, margin_fnb, harga_jual
+      SELECT id, nama, jenis, harga_supplier, harga_jual
       FROM produk
       WHERE supplier_id = ? AND (nama LIKE ? OR jenis LIKE ?)
       ORDER BY id DESC
@@ -185,7 +183,7 @@ if ($supplier) {
     $stmtCnt->close();
 
     $stmtP = $conn->prepare("
-      SELECT id, nama, jenis, harga_supplier, margin_fnb, harga_jual
+      SELECT id, nama, jenis, harga_supplier, harga_jual
       FROM produk
       WHERE supplier_id = ?
       ORDER BY id DESC
@@ -208,7 +206,9 @@ $total_pages = (int)ceil($total / $limit);
     <title>Manage Produk - Supplier</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- Path CSS konsisten -->
     <link rel="stylesheet" href="/assets/css/brand.css">
+    <!-- Favicon konsisten -->
     <link rel="icon" type="image/png" href="/assets/images/logo/logo_image_only.png">
   </head>
   <body class="bg-light">
@@ -241,7 +241,7 @@ $total_pages = (int)ceil($total / $limit);
           <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i> Cari</button>
         </form>
 
-        <!-- Tabel Produk -->
+        <!-- Tabel Produk (tanpa kolom margin) -->
         <div class="card shadow-sm">
           <div class="card-body p-0">
             <div class="table-responsive">
@@ -252,21 +252,19 @@ $total_pages = (int)ceil($total / $limit);
                     <th>Nama</th>
                     <th>Jenis</th>
                     <th class="text-end">Harga Supplier</th>
-                    <th class="text-end">Margin FnB</th>
                     <th class="text-end">Harga Jual</th>
                     <th class="text-end">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
                   <?php if (empty($products)): ?>
-                    <tr><td colspan="7" class="text-center text-muted py-4">Tidak ada data.</td></tr>
+                    <tr><td colspan="6" class="text-center text-muted py-4">Tidak ada data.</td></tr>
                   <?php else: foreach ($products as $p): ?>
                     <tr>
                       <td><?= $p['id'] ?></td>
                       <td><?= htmlspecialchars($p['nama']) ?></td>
                       <td><span class="badge text-bg-secondary"><?= htmlspecialchars($p['jenis']) ?></span></td>
                       <td class="text-end">Rp <?= number_format((float)$p['harga_supplier'], 2, ',', '.') ?></td>
-                      <td class="text-end">Rp <?= number_format((float)$p['margin_fnb'], 2, ',', '.') ?></td>
                       <td class="text-end">Rp <?= number_format((float)$p['harga_jual'], 2, ',', '.') ?></td>
                       <td class="text-end">
                         <div class="btn-group btn-group-sm">
@@ -276,7 +274,7 @@ $total_pages = (int)ceil($total / $limit);
                       </td>
                     </tr>
 
-                    <!-- Edit Modal -->
+                    <!-- Edit Produk Modal (tanpa field margin_fnb) -->
                     <div class="modal fade" id="editProdukModal<?= $p['id'] ?>" tabindex="-1" aria-hidden="true">
                       <div class="modal-dialog"><div class="modal-content">
                         <form method="post">
@@ -302,22 +300,13 @@ $total_pages = (int)ceil($total / $limit);
                               </select>
                             </div>
 
-                            <div class="row g-3">
-                              <div class="col-md-6">
-                                <div class="form-floating">
-                                  <input type="number" step="0.01" class="form-control" id="hs<?= $p['id'] ?>" name="harga_supplier" value="<?= htmlspecialchars((string)$p['harga_supplier']) ?>" required>
-                                  <label for="hs<?= $p['id'] ?>">Harga Supplier</label>
-                                </div>
-                              </div>
-                              <div class="col-md-6">
-                                <div class="form-floating">
-                                  <input type="number" step="0.01" class="form-control" id="mf<?= $p['id'] ?>" name="margin_fnb" value="<?= htmlspecialchars((string)$p['margin_fnb']) ?>" required>
-                                  <label for="mf<?= $p['id'] ?>">Margin FnB</label>
-                                </div>
-                              </div>
+                            <div class="form-floating">
+                              <input type="number" step="0.01" class="form-control" id="hs<?= $p['id'] ?>" name="harga_supplier" value="<?= htmlspecialchars((string)$p['harga_supplier']) ?>" required>
+                              <label for="hs<?= $p['id'] ?>">Harga Supplier</label>
                             </div>
+
                             <div class="form-text mt-2">
-                              Harga jual dihitung otomatis dari harga supplier + margin FnB (kolom generated).
+                              Margin FnB diatur oleh Admin. Harga jual dihitung otomatis (harga supplier + margin FnB).
                             </div>
                           </div>
                           <div class="modal-footer">
@@ -328,7 +317,7 @@ $total_pages = (int)ceil($total / $limit);
                       </div></div>
                     </div>
 
-                    <!-- Delete Modal -->
+                    <!-- Delete Produk Modal -->
                     <div class="modal fade" id="deleteProdukModal<?= $p['id'] ?>" tabindex="-1" aria-hidden="true">
                       <div class="modal-dialog"><div class="modal-content">
                         <form method="post">
@@ -370,7 +359,7 @@ $total_pages = (int)ceil($total / $limit);
           </nav>
         <?php endif; ?>
 
-        <!-- Create Modal -->
+        <!-- Create Produk Modal (tanpa field margin_fnb) -->
         <div class="modal fade" id="createProdukModal" tabindex="-1" aria-hidden="true">
           <div class="modal-dialog modal-lg"><div class="modal-content">
             <form method="post">
@@ -402,15 +391,10 @@ $total_pages = (int)ceil($total / $limit);
                       <label for="hsBaru">Harga supplier</label>
                     </div>
                   </div>
-                  <div class="col-md-6">
-                    <div class="form-floating">
-                      <input type="number" step="0.01" class="form-control" id="mfBaru" name="margin_fnb" placeholder="Margin FnB" required>
-                      <label for="mfBaru">Margin FnB</label>
-                    </div>
-                  </div>
                 </div>
+
                 <div class="form-text mt-2">
-                  Harga jual akan otomatis tersimpan sebagai penjumlahan harga supplier + margin FnB (kolom generated).
+                  Margin FnB diatur oleh Admin. Harga jual dihitung otomatis (harga supplier + margin FnB).
                 </div>
               </div>
               <div class="modal-footer">
@@ -422,7 +406,9 @@ $total_pages = (int)ceil($total / $limit);
         </div>
       <?php endif; ?>
     </main>
-    <?php include_once __DIR__ . '/../includes/footer.php'; ?>          
+
+    <?php include_once __DIR__ . '/../includes/footer.php'; ?>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   </body>
 </html>
