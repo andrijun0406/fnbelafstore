@@ -20,8 +20,8 @@ FNB Elaf Store is a **Food and Beverage web application**. It provides a platfor
 ## 🚀 Installation
 1. Clone the repository:
    ```bash
-git clone https://github.com/andrijun0406/fnbelafstore.git
-cd fnbelafstore
+      git clone https://github.com/andrijun0406/fnbelafstore.git
+      cd fnbelafstore
    ```
 
 ## 🔑 Usage
