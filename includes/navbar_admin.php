@@ -10,7 +10,11 @@ if (!function_exists('render_admin_navbar')) {
   function render_admin_navbar(): void { ?>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
       <div class="container-fluid">
-        <a class="navbar-brand" href="/admin/dashboard.php">F &amp; B ELAF Store</a>
+        <a class="navbar-brand d-flex align-items-center" href="/admin/dashboard.php">
+          <img src="/assets/images/logo/logo_fnb_kaf_full.png"
+              alt="F &amp; B KAF Bekasi logo" class="brand-logo brand-on-dark">
+          <span class="ms-2">F &amp; B KAF Bekasi</span>
+        </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#topNav">
           <span class="navbar-toggler-icon"></span>
         </button>
