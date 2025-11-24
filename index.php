@@ -229,12 +229,6 @@ function berlaku_sd(string $expiredAt): string {
       </section>
     </main>
 
-    <footer class="border-top bg-white">
-      <div class="container py-3">
-        <small class="text-muted">&copy; <?= date('Y'); ?> F &amp; B KAF Bekasi</small>
-      </div>
-    </footer>
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   </body>
 </html>
