@@ -3,10 +3,10 @@ declare(strict_types=1);
 
 /**
  * Admin - Manage Produk
- * - CRUD produk untuk supplier mana pun (termasuk supplier tanpa user)
- * - Harga_jual adalah kolom generated dari harga_supplier + margin_fnb (ditampilkan di UI, tidak diinput)
- * - Cegah delete jika ada stok terkait
- * - Validasi nama produk unik (case-insensitive) pada Create & Update
+ * - CRUD produk untuk supplier mana pun
+ * - Tampilkan Margin FnB & Harga Jual (kolom generated dari DB)
+ * - Nama produk wajib unik (case-insensitive) pada Create & Update
+ * - Upload foto produk (create/edit) dan hapus foto saat delete
  */
 
 define('DEBUG_MODE', true);
@@ -21,12 +21,9 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 require_once __DIR__ . '/../includes/auth.php';
-if (function_exists('requireRole')) {
-  requireRole('admin');
-} else {
-  checkRole('admin');
-}
+(function_exists('requireRole') ? requireRole('admin') : checkRole('admin'));
 require_once __DIR__ . '/../includes/koneksi.php';
+require_once __DIR__ . '/../includes/file_upload.php';
 include_once __DIR__ . '/../includes/navbar_admin.php';
 
 if (empty($_SESSION['csrf_token'])) {
@@ -38,7 +35,7 @@ function get($k,$d=''){ return isset($_GET[$k]) ? trim($_GET[$k]) : $d; }
 
 $flash = null;
 
-/* ========== Actions ========== */
+/* Actions */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $csrf = post('csrf_token');
   if (!hash_equals($_SESSION['csrf_token'], $csrf)) {
@@ -46,7 +43,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } else {
     $action = post('action');
 
-    /* Create product (admin) dengan cek nama unik (case-insensitive) */
     if ($action === 'create_produk') {
       $supplier_id     = post('supplier_id');
       $nama            = post('nama');
@@ -55,9 +51,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $margin_fnb      = post('margin_fnb');
 
       if (!ctype_digit($supplier_id) || $nama === '' || !in_array($jenis, ['kudapan','minuman'], true) || !is_numeric($harga_supplier) || !is_numeric($margin_fnb)) {
-        $flash = ['type'=>'danger','msg'=>'Input produk tidak valid. Pastikan semua field terisi benar.'];
+        $flash = ['type'=>'danger','msg'=>'Input produk tidak valid.'];
       } else {
-        // Cek nama unik secara global, case-insensitive
+        // Cek nama unik
         $stmtDupe = $conn->prepare("SELECT COUNT(*) AS c FROM produk WHERE LOWER(nama) = LOWER(?)");
         $stmtDupe->bind_param("s", $nama);
         $stmtDupe->execute();
@@ -68,7 +64,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $flash = ['type'=>'danger','msg'=>'Nama produk sudah digunakan. Gunakan nama lain (unik).'];
         } else {
           $sid = (int)$supplier_id;
-          // Pastikan supplier ada
           $stmtS = $conn->prepare("SELECT id FROM supplier WHERE id = ? LIMIT 1");
           $stmtS->bind_param("i", $sid);
           $stmtS->execute();
@@ -80,8 +75,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           } else {
             $hs  = (float)$harga_supplier;
             $mf  = (float)$margin_fnb;
-            $stmt = $conn->prepare("INSERT INTO produk (nama, jenis, harga_supplier, margin_fnb, supplier_id) VALUES (?, ?, ?, ?, ?)");
-            $stmt->bind_param("ssddi", $nama, $jenis, $hs, $mf, $sid);
+            $foto_path = null;
+
+            try {
+              if (!empty($_FILES['foto']) && is_uploaded_file($_FILES['foto']['tmp_name'])) {
+                $foto_path = save_product_image($_FILES['foto'], $sid);
+              }
+            } catch (Throwable $e) {
+              $flash = ['type'=>'danger','msg'=>'Upload foto gagal: ' . htmlspecialchars($e->getMessage())];
+            }
+
+            $stmt = $conn->prepare("INSERT INTO produk (nama, jenis, harga_supplier, margin_fnb, supplier_id, foto_path) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("ssddis", $nama, $jenis, $hs, $mf, $sid, $foto_path);
             try {
               if ($stmt->execute()) {
                 $flash = ['type'=>'success','msg'=>'Produk berhasil ditambahkan.'];
@@ -89,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flash = ['type'=>'danger','msg'=>'Gagal menambah produk: ' . htmlspecialchars($stmt->error)];
               }
             } catch (Throwable $e) {
-              // Jika DB-level unique constraint aktif, tangkap error duplicate key
+              if ($foto_path) delete_product_image($foto_path);
               $flash = ['type'=>'danger','msg'=>'Gagal menambah produk (nama duplikat di database). Gunakan nama lain.'];
             }
             $stmt->close();
@@ -97,7 +102,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
       }
 
-    /* Update product (admin) dengan cek nama unik (exclude dirinya) */
     } elseif ($action === 'update_produk') {
       $id              = post('id');
       $supplier_id     = post('supplier_id');
@@ -105,6 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $jenis           = post('jenis');
       $harga_supplier  = post('harga_supplier');
       $margin_fnb      = post('margin_fnb');
+      $hapus_foto      = post('hapus_foto'); // 'yes' or ''
 
       if (!ctype_digit($id) || !ctype_digit($supplier_id) || $nama === '' || !in_array($jenis, ['kudapan','minuman'], true) || !is_numeric($harga_supplier) || !is_numeric($margin_fnb)) {
         $flash = ['type'=>'danger','msg'=>'Input produk tidak valid.'];
@@ -112,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pid = (int)$id;
         $sid = (int)$supplier_id;
 
-        // Cek nama unik case-insensitive, exclude dirinya
+        // Cek nama unik exclude dirinya
         $stmtDupe = $conn->prepare("SELECT COUNT(*) AS c FROM produk WHERE LOWER(nama) = LOWER(?) AND id <> ?");
         $stmtDupe->bind_param("si", $nama, $pid);
         $stmtDupe->execute();
@@ -122,40 +127,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($dupeCount > 0) {
           $flash = ['type'=>'danger','msg'=>'Nama produk sudah digunakan. Gunakan nama lain (unik).'];
         } else {
-          // Pastikan produk & supplier ada
-          $stmtP = $conn->prepare("SELECT id FROM produk WHERE id = ? LIMIT 1");
-          $stmtP->bind_param("i", $pid);
-          $stmtP->execute();
-          $exP = $stmtP->get_result()->fetch_assoc();
-          $stmtP->close();
+          // Ambil foto lama
+          $stmtOld = $conn->prepare("SELECT foto_path FROM produk WHERE id = ? LIMIT 1");
+          $stmtOld->bind_param("i", $pid);
+          $stmtOld->execute();
+          $old = $stmtOld->get_result()->fetch_assoc();
+          $stmtOld->close();
+          $oldFoto = $old['foto_path'] ?? null;
 
-          $stmtS = $conn->prepare("SELECT id FROM supplier WHERE id = ? LIMIT 1");
-          $stmtS->bind_param("i", $sid);
-          $stmtS->execute();
-          $exS = $stmtS->get_result()->fetch_assoc();
-          $stmtS->close();
+          $hs  = (float)$harga_supplier;
+          $mf  = (float)$margin_fnb;
+          $newFoto = $oldFoto;
 
-          if (!$exP || !$exS) {
-            $flash = ['type'=>'danger','msg'=>'Produk/Supplier tidak ditemukan.'];
-          } else {
-            $hs  = (float)$harga_supplier;
-            $mf  = (float)$margin_fnb;
-
-            $stmt = $conn->prepare("UPDATE produk SET nama = ?, jenis = ?, harga_supplier = ?, margin_fnb = ?, supplier_id = ? WHERE id = ?");
-            $stmt->bind_param("ssddii", $nama, $jenis, $hs, $mf, $sid, $pid);
-            try {
-              $stmt->execute();
-              $flash = ['type'=>'success','msg'=>'Produk diperbarui.'];
-            } catch (Throwable $e) {
-              // Tangani bentrok unique di DB (jaga-jaga)
-              $flash = ['type'=>'danger','msg'=>'Gagal memperbarui produk (nama duplikat di database). Gunakan nama lain.'];
+          try {
+            if (!empty($_FILES['foto']) && is_uploaded_file($_FILES['foto']['tmp_name'])) {
+              $newFoto = save_product_image($_FILES['foto'], $sid);
+            } elseif ($hapus_foto === 'yes') {
+              $newFoto = null;
             }
-            $stmt->close();
+          } catch (Throwable $e) {
+            $flash = ['type'=>'danger','msg'=>'Upload foto gagal: ' . htmlspecialchars($e->getMessage())];
           }
+
+          $stmt = $conn->prepare("UPDATE produk SET nama = ?, jenis = ?, harga_supplier = ?, margin_fnb = ?, supplier_id = ?, foto_path = ? WHERE id = ?");
+          $stmt->bind_param("ssddisi", $nama, $jenis, $hs, $mf, $sid, $newFoto, $pid);
+          try {
+            $stmt->execute();
+            // Hapus foto lama jika diganti atau diminta hapus
+            if ($newFoto && $oldFoto && $newFoto !== $oldFoto) delete_product_image($oldFoto);
+            if ($hapus_foto === 'yes' && $oldFoto) delete_product_image($oldFoto);
+            $flash = ['type'=>'success','msg'=>'Produk diperbarui.'];
+          } catch (Throwable $e) {
+            if ($newFoto && $newFoto !== $oldFoto) delete_product_image($newFoto);
+            $flash = ['type'=>'danger','msg'=>'Gagal memperbarui produk (nama duplikat di database). Gunakan nama lain.'];
+          }
+          $stmt->close();
         }
       }
 
-    /* Delete product (admin) dengan cek stok terkait */
     } elseif ($action === 'delete_produk') {
       $id = post('id');
       if (!ctype_digit($id)) {
@@ -172,9 +181,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (($resC['c'] ?? 0) > 0) {
           $flash = ['type'=>'danger','msg'=>'Tidak dapat menghapus, ada stok terkait.'];
         } else {
+          // Ambil foto lama
+          $stmtOld = $conn->prepare("SELECT foto_path FROM produk WHERE id = ? LIMIT 1");
+          $stmtOld->bind_param("i", $pid);
+          $stmtOld->execute();
+          $old = $stmtOld->get_result()->fetch_assoc();
+          $stmtOld->close();
+          $oldFoto = $old['foto_path'] ?? null;
+
           $stmt = $conn->prepare("DELETE FROM produk WHERE id = ?");
           $stmt->bind_param("i", $pid);
           if ($stmt->execute() && $stmt->affected_rows > 0) {
+            if ($oldFoto) delete_product_image($oldFoto);
             $flash = ['type'=>'success','msg'=>'Produk dihapus.'];
           } else {
             $flash = ['type'=>'danger','msg'=>'Gagal menghapus produk.'];
@@ -186,13 +204,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 
-/* ========== Listing & pagination ========== */
+/* Listing & pagination */
 $q     = get('q', '');
 $page  = max(1, (int)get('page', '1'));
 $limit = 10;
 $offset = ($page - 1) * $limit;
 
-// Suppliers untuk dropdown (tampilkan semua, beri label jika belum punya user)
 $suppliers = $conn->query("
   SELECT s.id, s.nama, s.user_id, u.username
   FROM supplier s
@@ -200,7 +217,6 @@ $suppliers = $conn->query("
   ORDER BY s.nama ASC
 ")->fetch_all(MYSQLI_ASSOC);
 
-// Hitung total produk
 if ($q !== '') {
   $like = '%' . $q . '%';
   $stmtCnt = $conn->prepare("
@@ -217,11 +233,10 @@ $stmtCnt->execute();
 $total = (int)$stmtCnt->get_result()->fetch_assoc()['c'];
 $stmtCnt->close();
 
-// Ambil produk (admin melihat margin & harga_jual)
 if ($q !== '') {
   $like = '%' . $q . '%';
   $sql = "
-    SELECT p.id, p.nama, p.jenis, p.harga_supplier, p.margin_fnb, p.harga_jual, 
+    SELECT p.id, p.nama, p.jenis, p.harga_supplier, p.margin_fnb, p.harga_jual, p.foto_path,
            s.id AS supplier_id, s.nama AS supplier_nama, u.username AS supplier_user
     FROM produk p
     JOIN supplier s ON s.id = p.supplier_id
@@ -234,7 +249,7 @@ if ($q !== '') {
   $stmtP->bind_param("ss", $like, $like);
 } else {
   $sql = "
-    SELECT p.id, p.nama, p.jenis, p.harga_supplier, p.margin_fnb, p.harga_jual, 
+    SELECT p.id, p.nama, p.jenis, p.harga_supplier, p.margin_fnb, p.harga_jual, p.foto_path,
            s.id AS supplier_id, s.nama AS supplier_nama, u.username AS supplier_user
     FROM produk p
     JOIN supplier s ON s.id = p.supplier_id
@@ -259,6 +274,7 @@ $total_pages = (int)ceil($total / $limit);
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="/assets/css/brand.css">
+    <link rel="icon" type="image/png" href="/assets/images/logo/logo_image_only.png">
   </head>
   <body class="bg-light">
     <?php render_admin_navbar(); ?>
@@ -278,13 +294,11 @@ $total_pages = (int)ceil($total / $limit);
         </button>
       </div>
 
-      <!-- Pencarian -->
       <form class="d-flex mb-3" method="get">
         <input type="text" name="q" class="form-control me-2" placeholder="Cari nama produk / supplier..." value="<?= htmlspecialchars($q) ?>">
         <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i> Cari</button>
       </form>
 
-      <!-- Tabel Produk -->
       <div class="card shadow-sm">
         <div class="card-body p-0">
           <div class="table-responsive">
@@ -292,6 +306,7 @@ $total_pages = (int)ceil($total / $limit);
               <thead class="table-light">
                 <tr>
                   <th>ID</th>
+                  <th>Foto</th>
                   <th>Produk</th>
                   <th>Supplier</th>
                   <th>Jenis</th>
@@ -303,10 +318,17 @@ $total_pages = (int)ceil($total / $limit);
               </thead>
               <tbody>
                 <?php if (empty($products)): ?>
-                  <tr><td colspan="8" class="text-center text-muted py-4">Tidak ada data.</td></tr>
+                  <tr><td colspan="9" class="text-center text-muted py-4">Tidak ada data.</td></tr>
                 <?php else: foreach ($products as $p): ?>
                   <tr>
                     <td><?= $p['id'] ?></td>
+                    <td>
+                      <?php if (!empty($p['foto_path'])): ?>
+                        <img src="<?= htmlspecialchars($p['foto_path']) ?>" alt="<?= htmlspecialchars($p['nama']) ?>" style="height:40px;width:auto;border-radius:4px;">
+                      <?php else: ?>
+                        <span class="text-muted">-</span>
+                      <?php endif; ?>
+                    </td>
                     <td><?= htmlspecialchars($p['nama']) ?></td>
                     <td>
                       <?= htmlspecialchars($p['supplier_nama']) ?>
@@ -328,10 +350,10 @@ $total_pages = (int)ceil($total / $limit);
                     </td>
                   </tr>
 
-                  <!-- Edit Modal (admin) -->
+                  <!-- Edit Modal -->
                   <div class="modal fade" id="editProdukModal<?= $p['id'] ?>" tabindex="-1" aria-hidden="true">
                     <div class="modal-dialog"><div class="modal-content">
-                      <form method="post">
+                      <form method="post" enctype="multipart/form-data">
                         <div class="modal-header">
                           <h5 class="modal-title">Edit Produk</h5>
                           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -379,8 +401,22 @@ $total_pages = (int)ceil($total / $limit);
                               </div>
                             </div>
                           </div>
+
+                          <div class="mb-2">
+                            <label class="form-label">Foto Produk (opsional)</label>
+                            <input type="file" class="form-control" name="foto" accept="image/*" capture="environment">
+                            <div class="form-text">Ambil dari kamera (mobile/iPad) atau pilih dari file explorer (desktop).</div>
+                          </div>
+
+                          <?php if (!empty($p['foto_path'])): ?>
+                            <div class="form-check">
+                              <input class="form-check-input" type="checkbox" value="yes" id="hapusFoto<?= $p['id'] ?>" name="hapus_foto">
+                              <label class="form-check-label" for="hapusFoto<?= $p['id'] ?>">Hapus foto saat simpan</label>
+                            </div>
+                          <?php endif; ?>
+
                           <div class="form-text mt-2">
-                            Harga jual dihitung otomatis dari harga supplier + margin FnB (kolom generated di database). :llmCitationRef[1]
+                            Harga jual ditampilkan otomatis dari harga supplier + margin FnB (kolom generated di database). :llmCitationRef[1]
                           </div>
                         </div>
                         <div class="modal-footer">
@@ -412,6 +448,7 @@ $total_pages = (int)ceil($total / $limit);
                       </form>
                     </div></div>
                   </div>
+
                 <?php endforeach; endif; ?>
               </tbody>
             </table>
@@ -419,7 +456,6 @@ $total_pages = (int)ceil($total / $limit);
         </div>
       </div>
 
-      <!-- Pagination -->
       <?php if ($total_pages > 1): ?>
         <nav class="mt-3">
           <ul class="pagination pagination-sm">
@@ -432,10 +468,10 @@ $total_pages = (int)ceil($total / $limit);
         </nav>
       <?php endif; ?>
 
-      <!-- Create Modal (admin) -->
+      <!-- Create Modal -->
       <div class="modal fade" id="createProdukModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg"><div class="modal-content">
-          <form method="post">
+          <form method="post" enctype="multipart/form-data">
             <div class="modal-header">
               <h5 class="modal-title">Tambah Produk</h5>
               <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -455,7 +491,6 @@ $total_pages = (int)ceil($total / $limit);
                       </option>
                     <?php endforeach; ?>
                   </select>
-                  <div class="form-text">Supplier tanpa user akan ditandai (no user).</div>
                 </div>
                 <div class="col-md-6">
                   <div class="form-floating">
@@ -482,7 +517,12 @@ $total_pages = (int)ceil($total / $limit);
                     <label for="mfBaru">Margin FnB</label>
                   </div>
                 </div>
+                <div class="col-md-6">
+                  <label class="form-label">Foto Produk (opsional)</label>
+                  <input type="file" class="form-control" name="foto" accept="image/*" capture="environment">
+                </div>
               </div>
+
               <div class="form-text mt-2">
                 Nama produk harus unik (case-insensitive). Harga jual ditampilkan otomatis dari harga supplier + margin FnB (kolom generated di database). :llmCitationRef[2]
               </div>
