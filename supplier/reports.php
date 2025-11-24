@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-// Debug sementara (MATIKAN di production)
+// Debug sementara (matikan di production)
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
@@ -33,7 +33,11 @@ $stmtSup->close();
 
 $flash = null;
 $today = date('Y-m-d');
+
+// Filter harian
 $daily_date = get('date', $today);
+
+// Filter bulanan
 $month = (int) get('month', date('n'));
 $year  = (int) get('year',  date('Y'));
 $month = ($month >=1 && $month <=12) ? $month : (int)date('n');
@@ -41,7 +45,6 @@ $year  = ($year >=1970 && $year <=2100) ? $year : (int)date('Y');
 
 // Filter referensi minggu untuk panel pembayaran mingguan
 $ref_date = get('ref_date', $today);
-// Hitung minggu (Senin s.d. Minggu) untuk referensi tampilan
 $ref = DateTime::createFromFormat('Y-m-d', $ref_date) ?: new DateTime($today);
 $week_start = (clone $ref)->modify('monday this week')->format('Y-m-d');
 $week_end   = (clone $ref)->modify('sunday this week')->format('Y-m-d');
@@ -51,12 +54,11 @@ if (!$supplier) {
 } else {
   $supId = (int)$supplier['id'];
 
-  // Daily aggregates untuk supplier (penjualan dan keuntungan)
+  // Daily aggregates untuk supplier (hanya unit & keuntungan supplier)
   $stmtDaily = $conn->prepare("
     SELECT 
-      SUM(sa.jumlah_terjual) AS units,
-      SUM(sa.jumlah_terjual * p.harga_jual) AS revenue,
-      SUM(sa.jumlah_terjual * p.harga_supplier) AS supplier_profit
+      COALESCE(SUM(sa.jumlah_terjual), 0) AS units,
+      COALESCE(SUM(sa.jumlah_terjual * p.harga_supplier), 0) AS supplier_profit
     FROM stok_akhir sa
     JOIN stok st ON st.id = sa.stok_id
     JOIN produk p ON p.id = st.produk_id
@@ -67,12 +69,11 @@ if (!$supplier) {
   $daily = $stmtDaily->get_result()->fetch_assoc();
   $stmtDaily->close();
 
-  // Monthly aggregates untuk supplier
+  // Monthly aggregates untuk supplier (hanya unit & keuntungan supplier)
   $stmtMonthly = $conn->prepare("
     SELECT 
-      SUM(sa.jumlah_terjual) AS units,
-      SUM(sa.jumlah_terjual * p.harga_jual) AS revenue,
-      SUM(sa.jumlah_terjual * p.harga_supplier) AS supplier_profit
+      COALESCE(SUM(sa.jumlah_terjual), 0) AS units,
+      COALESCE(SUM(sa.jumlah_terjual * p.harga_supplier), 0) AS supplier_profit
     FROM stok_akhir sa
     JOIN stok st ON st.id = sa.stok_id
     JOIN produk p ON p.id = st.produk_id
@@ -83,12 +84,11 @@ if (!$supplier) {
   $monthly = $stmtMonthly->get_result()->fetch_assoc();
   $stmtMonthly->close();
 
-  // Per produk (harian)
+  // Per produk (harian: unit & keuntungan supplier)
   $stmtDailyProducts = $conn->prepare("
     SELECT p.nama AS produk_nama, p.jenis,
-           SUM(sa.jumlah_terjual) AS units,
-           SUM(sa.jumlah_terjual * p.harga_jual) AS revenue,
-           SUM(sa.jumlah_terjual * p.harga_supplier) AS supplier_profit
+           COALESCE(SUM(sa.jumlah_terjual), 0) AS units,
+           COALESCE(SUM(sa.jumlah_terjual * p.harga_supplier), 0) AS supplier_profit
     FROM stok_akhir sa
     JOIN stok st ON st.id = sa.stok_id
     JOIN produk p ON p.id = st.produk_id
@@ -101,12 +101,11 @@ if (!$supplier) {
   $daily_products = $stmtDailyProducts->get_result()->fetch_all(MYSQLI_ASSOC);
   $stmtDailyProducts->close();
 
-  // Per produk (bulanan)
+  // Per produk (bulanan: unit & keuntungan supplier)
   $stmtMonthlyProducts = $conn->prepare("
     SELECT p.nama AS produk_nama, p.jenis,
-           SUM(sa.jumlah_terjual) AS units,
-           SUM(sa.jumlah_terjual * p.harga_jual) AS revenue,
-           SUM(sa.jumlah_terjual * p.harga_supplier) AS supplier_profit
+           COALESCE(SUM(sa.jumlah_terjual), 0) AS units,
+           COALESCE(SUM(sa.jumlah_terjual * p.harga_supplier), 0) AS supplier_profit
     FROM stok_akhir sa
     JOIN stok st ON st.id = sa.stok_id
     JOIN produk p ON p.id = st.produk_id
@@ -120,7 +119,6 @@ if (!$supplier) {
   $stmtMonthlyProducts->close();
 
   // Panel pembayaran mingguan (pending & histori)
-  // Catatan: admin akan generate payment mingguan dan menandai sebagai paid, supplier hanya melihat statusnya
   $stmtWeeklyPending = $conn->prepare("
     SELECT period_date, amount, status, paid_at
     FROM supplier_payments
@@ -155,7 +153,6 @@ if (!$supplier) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="/assets/css/brand.css">
-    <link rel="icon" type="image/png" href="/assets/images/logo/logo_image_only.png">
   </head>
   <body class="bg-light">
     <?php render_supplier_navbar(); ?>
@@ -171,7 +168,7 @@ if (!$supplier) {
           <span class="text-muted">Supplier: <?= h($supplier['nama']) ?></span>
         </div>
 
-        <!-- Laporan Harian -->
+        <!-- Laporan Harian (hanya Unit & Keuntungan Supplier) -->
         <div class="card shadow-sm mb-3">
           <div class="card-header">Laporan Harian</div>
           <div class="card-body">
@@ -186,19 +183,13 @@ if (!$supplier) {
             </form>
 
             <div class="row g-3 mt-2">
-              <div class="col-md-4">
+              <div class="col-md-6">
                 <div class="card"><div class="card-body">
                   <div class="text-muted">Unit Terjual</div>
                   <div class="fs-5"><?= (int)($daily['units'] ?? 0) ?></div>
                 </div></div>
               </div>
-              <div class="col-md-4">
-                <div class="card"><div class="card-body">
-                  <div class="text-muted">Pendapatan</div>
-                  <div class="fs-5">Rp <?= number_format((float)($daily['revenue'] ?? 0), 2, ',', '.') ?></div>
-                </div></div>
-              </div>
-              <div class="col-md-4">
+              <div class="col-md-6">
                 <div class="card"><div class="card-body">
                   <div class="text-muted">Keuntungan Supplier</div>
                   <div class="fs-5">Rp <?= number_format((float)($daily['supplier_profit'] ?? 0), 2, ',', '.') ?></div>
@@ -213,19 +204,17 @@ if (!$supplier) {
                     <th>Produk</th>
                     <th>Jenis</th>
                     <th class="text-end">Unit</th>
-                    <th class="text-end">Pendapatan</th>
                     <th class="text-end">Keuntungan Supplier</th>
                   </tr>
                 </thead>
                 <tbody>
                   <?php if (empty($daily_products)): ?>
-                    <tr><td colspan="5" class="text-center text-muted">Tidak ada data.</td></tr>
+                    <tr><td colspan="4" class="text-center text-muted">Tidak ada data.</td></tr>
                   <?php else: foreach ($daily_products as $r): ?>
                     <tr>
                       <td><?= h($r['produk_nama']) ?></td>
                       <td><span class="badge text-bg-secondary"><?= h($r['jenis']) ?></span></td>
                       <td class="text-end"><?= (int)$r['units'] ?></td>
-                      <td class="text-end">Rp <?= number_format((float)$r['revenue'], 2, ',', '.') ?></td>
                       <td class="text-end">Rp <?= number_format((float)$r['supplier_profit'], 2, ',', '.') ?></td>
                     </tr>
                   <?php endforeach; endif; ?>
@@ -235,7 +224,7 @@ if (!$supplier) {
           </div>
         </div>
 
-        <!-- Laporan Bulanan -->
+        <!-- Laporan Bulanan (hanya Unit & Keuntungan Supplier) -->
         <div class="card shadow-sm mb-3">
           <div class="card-header">Laporan Bulanan</div>
           <div class="card-body">
@@ -250,7 +239,7 @@ if (!$supplier) {
               </div>
               <div class="col-md-2">
                 <label class="form-label">Tahun</label>
-                <input type="number" name="year" value="<?= (int)$year ?>" class="form-control">
+                <input type="number" name="year" value="<?= (int)$year ?>" class="form-control" required>
               </div>
               <div class="col-md-2 d-flex align-items-end">
                 <button class="btn btn-outline-secondary" type="submit">Terapkan</button>
@@ -258,19 +247,13 @@ if (!$supplier) {
             </form>
 
             <div class="row g-3 mt-2">
-              <div class="col-md-4">
+              <div class="col-md-6">
                 <div class="card"><div class="card-body">
                   <div class="text-muted">Unit Terjual</div>
                   <div class="fs-5"><?= (int)($monthly['units'] ?? 0) ?></div>
                 </div></div>
               </div>
-              <div class="col-md-4">
-                <div class="card"><div class="card-body">
-                  <div class="text-muted">Pendapatan</div>
-                  <div class="fs-5">Rp <?= number_format((float)($monthly['revenue'] ?? 0), 2, ',', '.') ?></div>
-                </div></div>
-              </div>
-              <div class="col-md-4">
+              <div class="col-md-6">
                 <div class="card"><div class="card-body">
                   <div class="text-muted">Keuntungan Supplier</div>
                   <div class="fs-5">Rp <?= number_format((float)($monthly['supplier_profit'] ?? 0), 2, ',', '.') ?></div>
@@ -285,19 +268,17 @@ if (!$supplier) {
                     <th>Produk</th>
                     <th>Jenis</th>
                     <th class="text-end">Unit</th>
-                    <th class="text-end">Pendapatan</th>
                     <th class="text-end">Keuntungan Supplier</th>
                   </tr>
                 </thead>
                 <tbody>
                   <?php if (empty($monthly_products)): ?>
-                    <tr><td colspan="5" class="text-center text-muted">Tidak ada data.</td></tr>
+                    <tr><td colspan="4" class="text-center text-muted">Tidak ada data.</td></tr>
                   <?php else: foreach ($monthly_products as $r): ?>
                     <tr>
                       <td><?= h($r['produk_nama']) ?></td>
                       <td><span class="badge text-bg-secondary"><?= h($r['jenis']) ?></span></td>
                       <td class="text-end"><?= (int)$r['units'] ?></td>
-                      <td class="text-end">Rp <?= number_format((float)$r['revenue'], 2, ',', '.') ?></td>
                       <td class="text-end">Rp <?= number_format((float)$r['supplier_profit'], 2, ',', '.') ?></td>
                     </tr>
                   <?php endforeach; endif; ?>
@@ -307,7 +288,7 @@ if (!$supplier) {
           </div>
         </div>
 
-        <!-- Panel Pembayaran Mingguan -->
+        <!-- Panel Pembayaran Mingguan (tetap amount & status) -->
         <div class="card shadow-sm mb-3">
           <div class="card-header d-flex justify-content-between align-items-center">
             <span>Pembayaran Mingguan</span>
@@ -387,6 +368,7 @@ if (!$supplier) {
                   </div>
                 </div>
               </div>
+
             </div>
 
           </div>
