@@ -13,6 +13,7 @@ require_once __DIR__ . '/../includes/auth.php';
 (function_exists('requireRole') ? requireRole('admin') : checkRole('admin'));
 require_once __DIR__ . '/../includes/koneksi.php';
 include_once __DIR__ . '/../includes/navbar_admin.php';
+
 ?>
 <!doctype html>
 <html lang="id">
@@ -140,13 +141,7 @@ include_once __DIR__ . '/../includes/navbar_admin.php';
         </div>
       </section>
     </main>
-
-    <footer class="border-top mt-4">
-      <div class="container py-3">
-        <small class="text-muted">&copy; <?= date('Y'); ?> F &amp; B ELAF Store</small>
-      </div>
-    </footer>
-
+    <?php include_once __DIR__ . '/../includes/footer.php'; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   </body>
 </html>
