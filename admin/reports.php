@@ -281,7 +281,7 @@ $pending_payments = $conn->query("
             </div>
           </form>
           <div class="form-text mt-2">
-            Nilai pembayaran = Σ (jumlah_terjual × harga_supplier) per supplier selama minggu tersebut. :llmCitationRef[1]
+            Nilai pembayaran = Σ (jumlah_terjual × harga_supplier) per supplier selama minggu tersebut.
           </div>
         </div>
       </div>
