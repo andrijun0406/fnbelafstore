@@ -91,7 +91,7 @@ function berlaku_sd(string $expiredAt): string {
     <title>F &amp; B ELAF Store</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="/css/brand.css">
+    <link rel="stylesheet" href="/assets/css/brand.css">
     <style>
       body { background-color: #f8f9fa; }
       .brand { font-weight: 700; letter-spacing: .5px; }
