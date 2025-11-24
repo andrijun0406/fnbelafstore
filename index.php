@@ -111,8 +111,8 @@ function berlaku_sd(string $expiredAt): string {
           <div class="d-flex align-items-center justify-content-between">
             <div class="d-flex align-items-center">
               <img src="/assets/images/logo/logo_fnb_kaf.png"
-                  alt="F &amp; B ELAF Store logo" class="brand-logo-lg brand-on-light">
-              <span class="brand-text">F &amp; B ELAF Store</span>
+                  alt="F &amp; B KAF Bekasi logo" class="brand-logo-lg brand-on-light">
+              <span class="brand-text">Food &amp; Beverage Kuttab Al Fatih Bekasi</span>
             </div>
             <div class="d-flex align-items-center gap-3">
               <span class="text-muted small"><?= htmlspecialchars($today) ?></span>
@@ -128,9 +128,9 @@ function berlaku_sd(string $expiredAt): string {
     <main class="container py-4">
       <!-- Penjelasan -->
       <section class="hero p-4 shadow-sm mb-4">
-        <h1 class="h5 mb-3">Tentang F &amp; B ELAF Store</h1>
+        <h1 class="h5 mb-3">Tentang Food &amp; Beverage Kuttab Al Fatih Bekasi</h1>
         <p>
-          F &amp; B ELAF Store adalah Toko atau Warung berupa Wakaf Produktif di lingkungan Kuttab Al Fatih Bekasi yang menyediakan kudapan dan minuman sehari-hari untuk para ustadz dan ustadzah, santri, orang tua santri, serta masyarakat umum. Supplier berasal dari para orang tua santri dan hasil penjualan selain keuntungan para supplier, terdapat marjin yang digunakan untuk Bilistiwa — kebutuhan kegiatan dan wakaf Kuttab Al Fatih Bekasi.
+          Food &amp; Beverage Kuttab Al Fatih Bekasi adalah Toko atau Warung berupa Wakaf Produktif di lingkungan Kuttab Al Fatih Bekasi yang menyediakan kudapan dan minuman sehari-hari untuk para ustadz dan ustadzah, santri, orang tua santri, serta masyarakat umum. Supplier berasal dari para orang tua santri dan hasil penjualan selain keuntungan para supplier, terdapat marjin yang digunakan untuk Bilistiwa — kebutuhan kegiatan dan wakaf Kuttab Al Fatih Bekasi.
         </p>
       </section>
 
