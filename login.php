@@ -67,6 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="/assets/css/brand.css">
+    <link rel="icon" type="image/png" href="/assets/images/logo/logo_image_only.png">
     <style>
       body { background-color: #f8f9fa; }
       .login-card { max-width: 420px; width: 100%; }
@@ -77,7 +78,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <!-- Header kecil publik: tombol Home (Etalase) -->
     <header class="py-3 border-bottom bg-white">
       <div class="container d-flex justify-content-between align-items-center">
-        <div class="brand h5 mb-0">F &amp; B KAF Bekasi</div>
+         <div class="d-flex align-items-center">
+              <img src="/assets/images/logo/logo_fnb_kaf_full.png"
+                  alt="F &amp; B KAF Bekasi logo" class="brand-logo-lg brand-on-light">
+              <span class="brand-text">Food &amp; Beverage Kuttab Al Fatih Bekasi</span>
+            </div>
         <a href="/index.php" class="btn btn-outline-primary btn-sm">
           <i class="bi bi-house-door me-1"></i> Home Etalase
         </a>

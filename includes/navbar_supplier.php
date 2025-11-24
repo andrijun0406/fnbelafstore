@@ -10,7 +10,7 @@ if (!function_exists('render_supplier_navbar')) {
   function render_supplier_navbar(): void { ?>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
       <div class="container-fluid">
-        <a class="navbar-brand" href="/supplier/dashboard.php">F &amp; B ELAF Store</a>
+        <a class="navbar-brand" href="/supplier/dashboard.php">F &amp; B KAF Bekasi</a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#topNav">
           <span class="navbar-toggler-icon"></span>
         </button>
