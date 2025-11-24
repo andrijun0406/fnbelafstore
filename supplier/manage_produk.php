@@ -7,10 +7,10 @@ declare(strict_types=1);
  * - CRUD produk milik supplier yang tertaut ke user login
  * - Supplier hanya boleh melihat/mengubah: nama, jenis, harga_supplier
  * - Margin FnB TIDAK ditampilkan ke supplier dan TIDAK bisa diubah oleh supplier
+ * - Nama produk wajib unik secara global (case-insensitive)
  * - Cegah delete jika ada stok terkait
  */
 
-// Debug mode (hidupkan saat dev, matikan di production)
 define('DEBUG_MODE', true);
 if (DEBUG_MODE) {
   error_reporting(E_ALL);
@@ -18,12 +18,10 @@ if (DEBUG_MODE) {
   mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 }
 
-// Mulai sesi
 if (session_status() !== PHP_SESSION_ACTIVE) {
   session_start();
 }
 
-// Auth & koneksi
 require_once __DIR__ . '/../includes/auth.php';
 if (function_exists('requireRole')) {
   requireRole('supplier');
@@ -31,16 +29,12 @@ if (function_exists('requireRole')) {
   checkRole('supplier');
 }
 require_once __DIR__ . '/../includes/koneksi.php';
-
-// Navbar supplier
 include_once __DIR__ . '/../includes/navbar_supplier.php';
 
-// CSRF
 if (empty($_SESSION['csrf_token'])) {
   $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-// Helpers
 function post($k, $d=''){ return isset($_POST[$k]) ? trim($_POST[$k]) : $d; }
 function get($k, $d=''){ return isset($_GET[$k]) ? trim($_GET[$k]) : $d; }
 function current_user_id(): int { return isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0; }
@@ -48,7 +42,7 @@ function current_user_id(): int { return isset($_SESSION['user_id']) ? (int)$_SE
 $flash = null;
 $user_id = current_user_id();
 
-// Ambil supplier tertaut
+// Ambil supplier tertaut ke user
 $supplier = null;
 if ($user_id > 0) {
   $stmtSup = $conn->prepare("SELECT id, nama FROM supplier WHERE user_id = ? LIMIT 1");
@@ -58,7 +52,7 @@ if ($user_id > 0) {
   $stmtSup->close();
 }
 
-// Aksi CRUD (tanpa margin_fnb)
+// Aksi CRUD (tanpa melihat/menyetel margin_fnb, cek nama unik)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $csrf = post('csrf_token');
   if (!hash_equals($_SESSION['csrf_token'], $csrf)) {
@@ -79,16 +73,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       } elseif (!is_numeric($harga_supplier)) {
         $flash = ['type'=>'danger','msg'=>'Harga supplier harus numerik.'];
       } else {
-        $hs = (float)$harga_supplier;
-        // margin_fnb diset 0 — hanya admin yang boleh mengisi margin
-        $stmt = $conn->prepare("INSERT INTO produk (nama, jenis, harga_supplier, margin_fnb, supplier_id) VALUES (?, ?, ?, 0, ?)");
-        $stmt->bind_param("ssdi", $nama, $jenis, $hs, $supplier_id);
-        if ($stmt->execute()) {
-          $flash = ['type'=>'success','msg'=>'Produk berhasil ditambahkan.'];
+        // Cek nama unik (case-insensitive) sebelum insert
+        $stmtDupe = $conn->prepare("SELECT COUNT(*) AS c FROM produk WHERE LOWER(nama) = LOWER(?)");
+        $stmtDupe->bind_param("s", $nama);
+        $stmtDupe->execute();
+        $dupeCount = (int)$stmtDupe->get_result()->fetch_assoc()['c'];
+        $stmtDupe->close();
+
+        if ($dupeCount > 0) {
+          $flash = ['type'=>'danger','msg'=>'Nama produk sudah digunakan. Gunakan nama lain (unik).'];
         } else {
-          $flash = ['type'=>'danger','msg'=>'Gagal menambah produk: ' . htmlspecialchars($stmt->error)];
+          $hs = (float)$harga_supplier;
+          // margin_fnb diset 0 — hanya admin yang boleh mengisi margin
+          $stmt = $conn->prepare("INSERT INTO produk (nama, jenis, harga_supplier, margin_fnb, supplier_id) VALUES (?, ?, ?, 0, ?)");
+          $stmt->bind_param("ssdi", $nama, $jenis, $hs, $supplier_id);
+          if ($stmt->execute()) {
+            $flash = ['type'=>'success','msg'=>'Produk berhasil ditambahkan.'];
+          } else {
+            // Jika constraint unik di DB juga aktif, error akan terdeteksi di sini
+            $flash = ['type'=>'danger','msg'=>'Gagal menambah produk: ' . htmlspecialchars($stmt->error)];
+          }
+          $stmt->close();
         }
-        $stmt->close();
       }
 
     } elseif ($action === 'update_produk') {
@@ -104,17 +110,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       } elseif (!is_numeric($harga_supplier)) {
         $flash = ['type'=>'danger','msg'=>'Harga supplier harus numerik.'];
       } else {
+        // Cek nama unik (case-insensitive) exclude dirinya
         $pid = (int)$id;
-        $hs  = (float)$harga_supplier;
+        $stmtDupe = $conn->prepare("SELECT COUNT(*) AS c FROM produk WHERE LOWER(nama) = LOWER(?) AND id <> ?");
+        $stmtDupe->bind_param("si", $nama, $pid);
+        $stmtDupe->execute();
+        $dupeCount = (int)$stmtDupe->get_result()->fetch_assoc()['c'];
+        $stmtDupe->close();
 
-        // Supplier tidak boleh mengubah margin_fnb
-        $stmt = $conn->prepare("UPDATE produk SET nama = ?, jenis = ?, harga_supplier = ? WHERE id = ? AND supplier_id = ?");
-        $stmt->bind_param("ssdii", $nama, $jenis, $hs, $pid, $supplier_id);
-        $stmt->execute();
-        $flash = ($stmt->affected_rows > 0)
-          ? ['type'=>'success','msg'=>'Produk diperbarui.']
-          : ['type'=>'warning','msg'=>'Tidak ada perubahan atau produk bukan milik Anda.'];
-        $stmt->close();
+        if ($dupeCount > 0) {
+          $flash = ['type'=>'danger','msg'=>'Nama produk sudah digunakan. Gunakan nama lain (unik).'];
+        } else {
+          $hs  = (float)$harga_supplier;
+
+          // Supplier TIDAK boleh mengubah margin_fnb
+          $stmt = $conn->prepare("UPDATE produk SET nama = ?, jenis = ?, harga_supplier = ? WHERE id = ? AND supplier_id = ?");
+          $stmt->bind_param("ssdii", $nama, $jenis, $hs, $pid, $supplier_id);
+          $stmt->execute();
+          $flash = ($stmt->affected_rows > 0)
+            ? ['type'=>'success','msg'=>'Produk diperbarui.']
+            : ['type'=>'warning','msg'=>'Tidak ada perubahan atau produk bukan milik Anda.'];
+          $stmt->close();
+        }
       }
 
     } elseif ($action === 'delete_produk') {
@@ -154,7 +171,7 @@ $page = max(1, (int)get('page', '1'));
 $limit = 10;
 $offset = ($page - 1) * $limit;
 
-// Ambil produk (tanpa harga_jual dan margin_fnb)
+// Ambil produk (tanpa margin/harga_jual)
 $products = [];
 $total = 0;
 if ($supplier) {
@@ -219,7 +236,7 @@ $total_pages = (int)ceil($total / $limit);
 
       <?php if (!$supplier): ?>
         <div class="alert alert-warning">
-          Akun Anda belum ditautkan ke data supplier. Mohon hubungi admin untuk penautan agar dapat mengelola produk.
+          Akun Anda belum ditautkan ke data supplier. Mohon hubungi admin.
         </div>
       <?php else: ?>
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -238,7 +255,7 @@ $total_pages = (int)ceil($total / $limit);
           <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i> Cari</button>
         </form>
 
-        <!-- Tabel Produk (tanpa margin & harga_jual) -->
+        <!-- Tabel Produk -->
         <div class="card shadow-sm">
           <div class="card-body p-0">
             <div class="table-responsive">
@@ -269,7 +286,7 @@ $total_pages = (int)ceil($total / $limit);
                       </td>
                     </tr>
 
-                    <!-- Edit Produk Modal (tanpa field margin/harga_jual) -->
+                    <!-- Edit Modal -->
                     <div class="modal fade" id="editProdukModal<?= $p['id'] ?>" tabindex="-1" aria-hidden="true">
                       <div class="modal-dialog"><div class="modal-content">
                         <form method="post">
@@ -301,7 +318,7 @@ $total_pages = (int)ceil($total / $limit);
                             </div>
 
                             <div class="form-text mt-2">
-                              Jika Anda perlu mengubah margin FnB atau harga jual, silakan hubungi Admin F&B.
+                              Perubahan margin FnB/harga jual hanya oleh Admin F&B.
                             </div>
                           </div>
                           <div class="modal-footer">
@@ -312,7 +329,7 @@ $total_pages = (int)ceil($total / $limit);
                       </div></div>
                     </div>
 
-                    <!-- Delete Produk Modal -->
+                    <!-- Delete Modal -->
                     <div class="modal fade" id="deleteProdukModal<?= $p['id'] ?>" tabindex="-1" aria-hidden="true">
                       <div class="modal-dialog"><div class="modal-content">
                         <form method="post">
@@ -341,7 +358,6 @@ $total_pages = (int)ceil($total / $limit);
           </div>
         </div>
 
-        <!-- Pagination -->
         <?php if ($total_pages > 1): ?>
           <nav class="mt-3">
             <ul class="pagination pagination-sm">
@@ -354,7 +370,7 @@ $total_pages = (int)ceil($total / $limit);
           </nav>
         <?php endif; ?>
 
-        <!-- Create Produk Modal (tanpa margin/harga_jual) -->
+        <!-- Create Modal -->
         <div class="modal fade" id="createProdukModal" tabindex="-1" aria-hidden="true">
           <div class="modal-dialog modal-lg"><div class="modal-content">
             <form method="post">
@@ -389,7 +405,7 @@ $total_pages = (int)ceil($total / $limit);
                 </div>
 
                 <div class="form-text mt-2">
-                  Margin FnB dan harga jual diatur oleh Admin F&B.
+                  Margin FnB dan harga jual diatur oleh Admin F&B. Nama produk harus unik.
                 </div>
               </div>
               <div class="modal-footer">
