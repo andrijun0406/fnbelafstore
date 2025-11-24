@@ -1,14 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Supplier Dashboard
- * - Hanya untuk role supplier
- * - Reset password sendiri (verifikasi password saat ini)
- * - Ringkasan & pratinjau produk terbaru (CRUD lengkap ada di supplier/manage_produk.php)
- */
-
-// Debug mode (hidupkan saat development, matikan di production)
+// Debug (matikan di production)
 define('DEBUG_MODE', true);
 if (DEBUG_MODE) {
   error_reporting(E_ALL);
@@ -16,101 +9,81 @@ if (DEBUG_MODE) {
   mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 }
 
-// Mulai sesi sebelum gunakan auth
 if (session_status() !== PHP_SESSION_ACTIVE) {
   session_start();
 }
 
-// Auth & koneksi
 require_once __DIR__ . '/../includes/auth.php';
 if (function_exists('requireRole')) {
-  requireRole('supplier'); // versi auth baru
+  requireRole('supplier');
 } else {
-  checkRole('supplier');   // fallback ke versi auth lama
+  checkRole('supplier');
 }
 require_once __DIR__ . '/../includes/koneksi.php';
 
-// Muat partial navbar supplier konsisten
+// Navbar supplier
 include_once __DIR__ . '/../includes/navbar_supplier.php';
 
-// CSRF token
+// CSRF
 if (empty($_SESSION['csrf_token'])) {
   $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-// Helpers
-function post($k, $d = '') { return isset($_POST[$k]) ? trim($_POST[$k]) : $d; }
+function post($k,$d=''){ return isset($_POST[$k]) ? trim($_POST[$k]) : $d; }
 function current_user_id(): int { return isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0; }
 
 $flash = null;
 $user_id = current_user_id();
 
-// Ambil supplier tertaut ke user ini
-$supplier = null;
-if ($user_id > 0) {
-  $stmtSup = $conn->prepare("SELECT id, nama FROM supplier WHERE user_id = ? LIMIT 1");
-  $stmtSup->bind_param("i", $user_id);
-  $stmtSup->execute();
-  $supplier = $stmtSup->get_result()->fetch_assoc();
-  $stmtSup->close();
-}
+// Ambil supplier tertaut
+$stmtSup = $conn->prepare("SELECT id, nama FROM supplier WHERE user_id = ? LIMIT 1");
+$stmtSup->bind_param("i", $user_id);
+$stmtSup->execute();
+$supplier = $stmtSup->get_result()->fetch_assoc();
+$stmtSup->close();
 
-// Tangani aksi reset password
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// Reset password (tetap boleh)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('action') === 'reset_password') {
   $csrf = post('csrf_token');
   if (!hash_equals($_SESSION['csrf_token'], $csrf)) {
-    $flash = ['type' => 'danger', 'msg' => 'Sesi tidak valid, silakan muat ulang.'];
+    $flash = ['type'=>'danger','msg'=>'Sesi tidak valid, silakan muat ulang.'];
   } else {
-    $action = post('action');
-    if ($action === 'reset_password') {
-      $current = post('current_password');
-      $newpass = post('new_password');
-      $confirm = post('confirm_password');
+    $current = post('current_password');
+    $newpass = post('new_password');
+    $confirm = post('confirm_password');
 
-      if ($newpass === '' || $confirm === '' || $newpass !== $confirm) {
-        $flash = ['type' => 'danger', 'msg' => 'Password baru dan konfirmasi harus diisi dan sama.'];
+    if ($newpass === '' || $confirm === '' || $newpass !== $confirm) {
+      $flash = ['type'=>'danger','msg'=>'Password baru dan konfirmasi harus diisi dan sama.'];
+    } else {
+      $stmtU = $conn->prepare("SELECT password FROM users WHERE id = ? LIMIT 1");
+      $stmtU->bind_param("i", $user_id);
+      $stmtU->execute();
+      $resU = $stmtU->get_result()->fetch_assoc();
+      $stmtU->close();
+
+      if (!$resU || !password_verify($current, $resU['password'])) {
+        $flash = ['type'=>'danger','msg'=>'Password saat ini tidak sesuai.'];
       } else {
-        // Ambil hash password user sekarang
-        $stmtU = $conn->prepare("SELECT password FROM users WHERE id = ? LIMIT 1");
-        $stmtU->bind_param("i", $user_id);
-        $stmtU->execute();
-        $resU = $stmtU->get_result()->fetch_assoc();
-        $stmtU->close();
-
-        if (!$resU || !password_verify($current, $resU['password'])) {
-          $flash = ['type' => 'danger', 'msg' => 'Password saat ini tidak sesuai.'];
-        } else {
-          $hash = password_hash($newpass, PASSWORD_BCRYPT);
-          $stmtUp = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
-          $stmtUp->bind_param("si", $hash, $user_id);
-          $stmtUp->execute();
-          $stmtUp->close();
-          session_regenerate_id(true);
-          $flash = ['type' => 'success', 'msg' => 'Password berhasil diperbarui.'];
-        }
+        $hash = password_hash($newpass, PASSWORD_BCRYPT);
+        $stmtUp = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
+        $stmtUp->bind_param("si", $hash, $user_id);
+        $stmtUp->execute();
+        $stmtUp->close();
+        session_regenerate_id(true);
+        $flash = ['type'=>'success','msg'=>'Password berhasil diperbarui.'];
       }
     }
   }
 }
 
-// Data ringkasan & pratinjau produk
+// Ambil produk terbaru (hanya kolom yang boleh dilihat supplier)
 $products = [];
-$total_products = 0;
 if ($supplier) {
   $supId = (int)$supplier['id'];
-
-  // Hitung total produk supplier
-  $stmtCnt = $conn->prepare("SELECT COUNT(*) AS c FROM produk WHERE supplier_id = ?");
-  $stmtCnt->bind_param("i", $supId);
-  $stmtCnt->execute();
-  $rowCnt = $stmtCnt->get_result()->fetch_assoc();
-  $total_products = isset($rowCnt['c']) ? (int)$rowCnt['c'] : 0;
-  $stmtCnt->close();
-
-  // Ambil 5 produk terbaru
-  $limitPreview = 5; // jika server tidak mendukung parameter LIMIT, ubah query jadi LIMIT 5 langsung
+  $limitPreview = 5;
+  // Jika server tidak mendukung parameter di LIMIT, ubah ke LIMIT 5 langsung
   $stmtP = $conn->prepare("
-    SELECT id, nama, jenis, harga_supplier, margin_fnb, harga_jual
+    SELECT id, nama, jenis, harga_supplier
     FROM produk
     WHERE supplier_id = ?
     ORDER BY id DESC
@@ -131,7 +104,6 @@ if ($supplier) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="/assets/css/brand.css">
-    <link rel="icon" type="image/png" href="/assets/images/logo/logo_image_only.png">
     <style>
       .stat-card .card-body { display: flex; align-items: center; justify-content: space-between; }
     </style>
@@ -160,13 +132,14 @@ if ($supplier) {
           </div>
         </div>
 
+        <!-- Ringkasan (tetap) -->
         <div class="row g-3 mb-4">
           <div class="col-12 col-md-6 col-xl-3">
             <div class="card stat-card shadow-sm">
               <div class="card-body">
                 <div>
                   <h6 class="text-muted mb-1">Total Produk</h6>
-                  <h4 class="mb-0"><?= number_format($total_products) ?></h4>
+                  <h4 class="mb-0"><?= number_format(count($products)) ?></h4>
                 </div>
                 <i class="bi bi-bag text-primary fs-2"></i>
               </div>
@@ -174,6 +147,7 @@ if ($supplier) {
           </div>
         </div>
 
+        <!-- Keamanan Akun -->
         <div class="card shadow-sm mb-4">
           <div class="card-header">Keamanan Akun</div>
           <div class="card-body">
@@ -205,6 +179,7 @@ if ($supplier) {
           </div>
         </div>
 
+        <!-- Produk Terbaru (hanya harga supplier) -->
         <div class="card shadow-sm">
           <div class="card-header d-flex justify-content-between align-items-center">
             <span class="fw-semibold">Produk Terbaru</span>
@@ -221,21 +196,17 @@ if ($supplier) {
                     <th>Nama</th>
                     <th>Jenis</th>
                     <th class="text-end">Harga Supplier</th>
-                    <th class="text-end">Margin FnB</th>
-                    <th class="text-end">Harga Jual</th>
                   </tr>
                 </thead>
                 <tbody>
                   <?php if (empty($products)): ?>
-                    <tr><td colspan="6" class="text-center text-muted py-4">Belum ada produk. Mulai tambah di halaman Kelola Produk.</td></tr>
+                    <tr><td colspan="4" class="text-center text-muted py-4">Belum ada produk. Mulai tambah di halaman Kelola Produk.</td></tr>
                   <?php else: foreach ($products as $p): ?>
                     <tr>
                       <td><?= $p['id'] ?></td>
                       <td><?= htmlspecialchars($p['nama']) ?></td>
                       <td><span class="badge text-bg-secondary"><?= htmlspecialchars($p['jenis']) ?></span></td>
                       <td class="text-end">Rp <?= number_format((float)$p['harga_supplier'], 2, ',', '.') ?></td>
-                      <td class="text-end">Rp <?= number_format((float)$p['margin_fnb'], 2, ',', '.') ?></td>
-                      <td class="text-end">Rp <?= number_format((float)$p['harga_jual'], 2, ',', '.') ?></td>
                     </tr>
                   <?php endforeach; endif; ?>
                 </tbody>
@@ -245,7 +216,9 @@ if ($supplier) {
         </div>
       <?php endif; ?>
     </main>
+
     <?php include_once __DIR__ . '/../includes/footer.php'; ?>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   </body>
 </html>
