@@ -88,7 +88,7 @@ function berlaku_sd(string $expiredAt): string {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>F &amp; B ELAF Store</title>
+    <title>F &amp; B KAF Bekasi</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="/assets/css/brand.css">
@@ -231,7 +231,7 @@ function berlaku_sd(string $expiredAt): string {
 
     <footer class="border-top bg-white">
       <div class="container py-3">
-        <small class="text-muted">&copy; <?= date('Y'); ?> F &amp; B ELAF Store</small>
+        <small class="text-muted">&copy; <?= date('Y'); ?> F &amp; B KAF Bekasi</small>
       </div>
     </footer>
 
