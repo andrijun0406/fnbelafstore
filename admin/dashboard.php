@@ -29,7 +29,8 @@ include_once __DIR__ . '/../includes/navbar_admin.php';
 
     <!-- Bootstrap Icons (opsional) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-
+    <link rel="stylesheet" href="/assets/css/brand.css">
+    <link rel="icon" type="image/png" href="/assets/images/logo/logo_image_only.png">
     <style>
       :root { --brand-primary: #0d6efd; }
       body { background-color: #f8f9fa; }
