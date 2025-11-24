@@ -91,6 +91,7 @@ function berlaku_sd(string $expiredAt): string {
     <title>F &amp; B ELAF Store</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="/css/brand.css">
     <style>
       body { background-color: #f8f9fa; }
       .brand { font-weight: 700; letter-spacing: .5px; }
@@ -108,7 +109,11 @@ function berlaku_sd(string $expiredAt): string {
       <header class="py-3 border-bottom bg-white">
         <div class="container">
           <div class="d-flex align-items-center justify-content-between">
-            <div class="brand h5 mb-0">F &amp; B ELAF Store</div>
+            <div class="d-flex align-items-center">
+              <img src="/assets/images/logo/logo_fnb_kaf.png"
+                  alt="F &amp; B ELAF Store logo" class="brand-logo-lg brand-on-light">
+              <span class="brand-text">F &amp; B ELAF Store</span>
+            </div>
             <div class="d-flex align-items-center gap-3">
               <span class="text-muted small"><?= htmlspecialchars($today) ?></span>
               <a href="/login.php" class="btn btn-outline-primary btn-sm">
