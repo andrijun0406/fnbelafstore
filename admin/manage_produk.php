@@ -4,13 +4,17 @@ declare(strict_types=1);
 /**
  * Admin - Manage Produk
  * - CRUD produk untuk supplier mana pun (termasuk supplier tanpa user)
- * - Harga_jual adalah kolom generated dari harga_supplier + margin_fnb (tidak diinput manual)
- * - Cegah delete jika ada stok terkait (stok.produk_id mereferensikan produk.id)
+ * - Harga_jual adalah kolom generated dari harga_supplier + margin_fnb (ditampilkan di UI, tidak diinput)
+ * - Cegah delete jika ada stok terkait
+ * - Validasi nama produk unik (case-insensitive) pada Create & Update
  */
 
-error_reporting(E_ALL);
-ini_set('display_errors', '1');
-mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+define('DEBUG_MODE', true);
+if (DEBUG_MODE) {
+  error_reporting(E_ALL);
+  ini_set('display_errors', '1');
+  mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+}
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
   session_start();
@@ -23,8 +27,6 @@ if (function_exists('requireRole')) {
   checkRole('admin');
 }
 require_once __DIR__ . '/../includes/koneksi.php';
-
-// Muat partial navbar admin konsisten
 include_once __DIR__ . '/../includes/navbar_admin.php';
 
 if (empty($_SESSION['csrf_token'])) {
@@ -36,7 +38,7 @@ function get($k,$d=''){ return isset($_GET[$k]) ? trim($_GET[$k]) : $d; }
 
 $flash = null;
 
-// Aksi CRUD
+/* ========== Actions ========== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $csrf = post('csrf_token');
   if (!hash_equals($_SESSION['csrf_token'], $csrf)) {
@@ -44,6 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } else {
     $action = post('action');
 
+    /* Create product (admin) dengan cek nama unik (case-insensitive) */
     if ($action === 'create_produk') {
       $supplier_id     = post('supplier_id');
       $nama            = post('nama');
@@ -52,33 +55,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $margin_fnb      = post('margin_fnb');
 
       if (!ctype_digit($supplier_id) || $nama === '' || !in_array($jenis, ['kudapan','minuman'], true) || !is_numeric($harga_supplier) || !is_numeric($margin_fnb)) {
-        $flash = ['type'=>'danger','msg'=>'Input produk tidak valid.'];
+        $flash = ['type'=>'danger','msg'=>'Input produk tidak valid. Pastikan semua field terisi benar.'];
       } else {
-        $sid = (int)$supplier_id;
-        $hs  = (float)$harga_supplier;
-        $mf  = (float)$margin_fnb;
+        // Cek nama unik secara global, case-insensitive
+        $stmtDupe = $conn->prepare("SELECT COUNT(*) AS c FROM produk WHERE LOWER(nama) = LOWER(?)");
+        $stmtDupe->bind_param("s", $nama);
+        $stmtDupe->execute();
+        $dupeCount = (int)$stmtDupe->get_result()->fetch_assoc()['c'];
+        $stmtDupe->close();
 
-        // Pastikan supplier ada
-        $stmtS = $conn->prepare("SELECT id FROM supplier WHERE id = ? LIMIT 1");
-        $stmtS->bind_param("i", $sid);
-        $stmtS->execute();
-        $existsS = $stmtS->get_result()->fetch_assoc();
-        $stmtS->close();
-
-        if (!$existsS) {
-          $flash = ['type'=>'danger','msg'=>'Supplier tidak ditemukan.'];
+        if ($dupeCount > 0) {
+          $flash = ['type'=>'danger','msg'=>'Nama produk sudah digunakan. Gunakan nama lain (unik).'];
         } else {
-          $stmt = $conn->prepare("INSERT INTO produk (nama, jenis, harga_supplier, margin_fnb, supplier_id) VALUES (?, ?, ?, ?, ?)");
-          $stmt->bind_param("ssddi", $nama, $jenis, $hs, $mf, $sid);
-          if ($stmt->execute()) {
-            $flash = ['type'=>'success','msg'=>'Produk berhasil ditambahkan.'];
+          $sid = (int)$supplier_id;
+          // Pastikan supplier ada
+          $stmtS = $conn->prepare("SELECT id FROM supplier WHERE id = ? LIMIT 1");
+          $stmtS->bind_param("i", $sid);
+          $stmtS->execute();
+          $exS = $stmtS->get_result()->fetch_assoc();
+          $stmtS->close();
+
+          if (!$exS) {
+            $flash = ['type'=>'danger','msg'=>'Supplier tidak ditemukan.'];
           } else {
-            $flash = ['type'=>'danger','msg'=>'Gagal menambah produk: ' . htmlspecialchars($stmt->error)];
+            $hs  = (float)$harga_supplier;
+            $mf  = (float)$margin_fnb;
+            $stmt = $conn->prepare("INSERT INTO produk (nama, jenis, harga_supplier, margin_fnb, supplier_id) VALUES (?, ?, ?, ?, ?)");
+            $stmt->bind_param("ssddi", $nama, $jenis, $hs, $mf, $sid);
+            try {
+              if ($stmt->execute()) {
+                $flash = ['type'=>'success','msg'=>'Produk berhasil ditambahkan.'];
+              } else {
+                $flash = ['type'=>'danger','msg'=>'Gagal menambah produk: ' . htmlspecialchars($stmt->error)];
+              }
+            } catch (Throwable $e) {
+              // Jika DB-level unique constraint aktif, tangkap error duplicate key
+              $flash = ['type'=>'danger','msg'=>'Gagal menambah produk (nama duplikat di database). Gunakan nama lain.'];
+            }
+            $stmt->close();
           }
-          $stmt->close();
         }
       }
 
+    /* Update product (admin) dengan cek nama unik (exclude dirinya) */
     } elseif ($action === 'update_produk') {
       $id              = post('id');
       $supplier_id     = post('supplier_id');
@@ -92,38 +111,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       } else {
         $pid = (int)$id;
         $sid = (int)$supplier_id;
-        $hs  = (float)$harga_supplier;
-        $mf  = (float)$margin_fnb;
 
-        // Pastikan produk ada
-        $stmtP = $conn->prepare("SELECT id FROM produk WHERE id = ? LIMIT 1");
-        $stmtP->bind_param("i", $pid);
-        $stmtP->execute();
-        $exP = $stmtP->get_result()->fetch_assoc();
-        $stmtP->close();
+        // Cek nama unik case-insensitive, exclude dirinya
+        $stmtDupe = $conn->prepare("SELECT COUNT(*) AS c FROM produk WHERE LOWER(nama) = LOWER(?) AND id <> ?");
+        $stmtDupe->bind_param("si", $nama, $pid);
+        $stmtDupe->execute();
+        $dupeCount = (int)$stmtDupe->get_result()->fetch_assoc()['c'];
+        $stmtDupe->close();
 
-        // Pastikan supplier ada
-        $stmtS = $conn->prepare("SELECT id FROM supplier WHERE id = ? LIMIT 1");
-        $stmtS->bind_param("i", $sid);
-        $stmtS->execute();
-        $exS = $stmtS->get_result()->fetch_assoc();
-        $stmtS->close();
-
-        if (!$exP || !$exS) {
-          $flash = ['type'=>'danger','msg'=>'Produk/Supplier tidak ditemukan.'];
+        if ($dupeCount > 0) {
+          $flash = ['type'=>'danger','msg'=>'Nama produk sudah digunakan. Gunakan nama lain (unik).'];
         } else {
-          $stmt = $conn->prepare("UPDATE produk SET nama = ?, jenis = ?, harga_supplier = ?, margin_fnb = ?, supplier_id = ? WHERE id = ?");
-          $stmt->bind_param("ssddii", $nama, $jenis, $hs, $mf, $sid, $pid);
-          $stmt->execute();
-          if ($stmt->affected_rows >= 0) {
-            $flash = ['type'=>'success','msg'=>'Produk diperbarui.'];
+          // Pastikan produk & supplier ada
+          $stmtP = $conn->prepare("SELECT id FROM produk WHERE id = ? LIMIT 1");
+          $stmtP->bind_param("i", $pid);
+          $stmtP->execute();
+          $exP = $stmtP->get_result()->fetch_assoc();
+          $stmtP->close();
+
+          $stmtS = $conn->prepare("SELECT id FROM supplier WHERE id = ? LIMIT 1");
+          $stmtS->bind_param("i", $sid);
+          $stmtS->execute();
+          $exS = $stmtS->get_result()->fetch_assoc();
+          $stmtS->close();
+
+          if (!$exP || !$exS) {
+            $flash = ['type'=>'danger','msg'=>'Produk/Supplier tidak ditemukan.'];
           } else {
-            $flash = ['type'=>'warning','msg'=>'Tidak ada perubahan.'];
+            $hs  = (float)$harga_supplier;
+            $mf  = (float)$margin_fnb;
+
+            $stmt = $conn->prepare("UPDATE produk SET nama = ?, jenis = ?, harga_supplier = ?, margin_fnb = ?, supplier_id = ? WHERE id = ?");
+            $stmt->bind_param("ssddii", $nama, $jenis, $hs, $mf, $sid, $pid);
+            try {
+              $stmt->execute();
+              $flash = ['type'=>'success','msg'=>'Produk diperbarui.'];
+            } catch (Throwable $e) {
+              // Tangani bentrok unique di DB (jaga-jaga)
+              $flash = ['type'=>'danger','msg'=>'Gagal memperbarui produk (nama duplikat di database). Gunakan nama lain.'];
+            }
+            $stmt->close();
           }
-          $stmt->close();
         }
       }
 
+    /* Delete product (admin) dengan cek stok terkait */
     } elseif ($action === 'delete_produk') {
       $id = post('id');
       if (!ctype_digit($id)) {
@@ -138,7 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmtC->close();
 
         if (($resC['c'] ?? 0) > 0) {
-          $flash = ['type'=>'danger','msg'=>'Tidak dapat menghapus: ada stok terkait produk ini.'];
+          $flash = ['type'=>'danger','msg'=>'Tidak dapat menghapus, ada stok terkait.'];
         } else {
           $stmt = $conn->prepare("DELETE FROM produk WHERE id = ?");
           $stmt->bind_param("i", $pid);
@@ -154,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 
-// Data tampilan
+/* ========== Listing & pagination ========== */
 $q     = get('q', '');
 $page  = max(1, (int)get('page', '1'));
 $limit = 10;
@@ -185,7 +217,7 @@ $stmtCnt->execute();
 $total = (int)$stmtCnt->get_result()->fetch_assoc()['c'];
 $stmtCnt->close();
 
-// Ambil produk (gunakan embed limit/offset numerik aman)
+// Ambil produk (admin melihat margin & harga_jual)
 if ($q !== '') {
   $like = '%' . $q . '%';
   $sql = "
@@ -227,7 +259,6 @@ $total_pages = (int)ceil($total / $limit);
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="/assets/css/brand.css">
-    <link rel="icon" type="image/png" href="/assets/images/logo/logo_image_only.png">
   </head>
   <body class="bg-light">
     <?php render_admin_navbar(); ?>
@@ -297,7 +328,7 @@ $total_pages = (int)ceil($total / $limit);
                     </td>
                   </tr>
 
-                  <!-- Edit Modal -->
+                  <!-- Edit Modal (admin) -->
                   <div class="modal fade" id="editProdukModal<?= $p['id'] ?>" tabindex="-1" aria-hidden="true">
                     <div class="modal-dialog"><div class="modal-content">
                       <form method="post">
@@ -349,7 +380,7 @@ $total_pages = (int)ceil($total / $limit);
                             </div>
                           </div>
                           <div class="form-text mt-2">
-                            Harga jual dihitung otomatis dari harga supplier + margin FnB (kolom generated).
+                            Harga jual dihitung otomatis dari harga supplier + margin FnB (kolom generated di database). :llmCitationRef[1]
                           </div>
                         </div>
                         <div class="modal-footer">
@@ -381,7 +412,6 @@ $total_pages = (int)ceil($total / $limit);
                       </form>
                     </div></div>
                   </div>
-
                 <?php endforeach; endif; ?>
               </tbody>
             </table>
@@ -402,7 +432,7 @@ $total_pages = (int)ceil($total / $limit);
         </nav>
       <?php endif; ?>
 
-      <!-- Create Modal -->
+      <!-- Create Modal (admin) -->
       <div class="modal fade" id="createProdukModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg"><div class="modal-content">
           <form method="post">
@@ -420,7 +450,7 @@ $total_pages = (int)ceil($total / $limit);
                   <select class="form-select" name="supplier_id" required>
                     <option value="">-- Pilih Supplier --</option>
                     <?php foreach ($suppliers as $s): ?>
-                      <option value="<?= $s['id'] ?>">
+                      <option value="<?= (int)$s['id'] ?>">
                         <?= htmlspecialchars($s['nama']) ?> <?= $s['username'] ? '@'.htmlspecialchars($s['username']) : '(no user)' ?>
                       </option>
                     <?php endforeach; ?>
@@ -454,7 +484,7 @@ $total_pages = (int)ceil($total / $limit);
                 </div>
               </div>
               <div class="form-text mt-2">
-                Harga jual akan otomatis dihitung oleh database dari harga supplier + margin FnB (kolom generated).
+                Nama produk harus unik (case-insensitive). Harga jual ditampilkan otomatis dari harga supplier + margin FnB (kolom generated di database). :llmCitationRef[2]
               </div>
             </div>
             <div class="modal-footer">
@@ -465,7 +495,9 @@ $total_pages = (int)ceil($total / $limit);
         </div></div>
       </div>
     </main>
-    <?php include_once __DIR__ . '/../includes/footer.php'; ?>                  
+
+    <?php include_once __DIR__ . '/../includes/footer.php'; ?>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   </body>
 </html>
