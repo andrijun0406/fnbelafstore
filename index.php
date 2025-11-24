@@ -92,6 +92,7 @@ function berlaku_sd(string $expiredAt): string {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="/assets/css/brand.css">
+    <link rel="icon" type="image/png" href="/assets/images/logo/logo_fnb_kaf_circle.png">
     <style>
       body { background-color: #f8f9fa; }
       .brand { font-weight: 700; letter-spacing: .5px; }
@@ -110,7 +111,7 @@ function berlaku_sd(string $expiredAt): string {
         <div class="container">
           <div class="d-flex align-items-center justify-content-between">
             <div class="d-flex align-items-center">
-              <img src="/assets/images/logo/logo_fnb_kaf.png"
+              <img src="/assets/images/logo/logo_fnb_kaf_circle.png"
                   alt="F &amp; B KAF Bekasi logo" class="brand-logo-lg brand-on-light">
               <span class="brand-text">Food &amp; Beverage Kuttab Al Fatih Bekasi</span>
             </div>
