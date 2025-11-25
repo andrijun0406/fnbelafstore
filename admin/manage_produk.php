@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'create_produk') {
       $supplier_id     = post('supplier_id');
-      $nama            = post('nama');
+      $nama            = ucwords(strtolower(trim(post('nama'))));
       $jenis           = post('jenis');
       $harga_supplier  = post('harga_supplier');
       $margin_fnb      = post('margin_fnb');
@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'update_produk') {
       $id              = post('id');
       $supplier_id     = post('supplier_id');
-      $nama            = post('nama');
+      $nama            = ucwords(strtolower(trim(post('nama'))));
       $jenis           = post('jenis');
       $harga_supplier  = post('harga_supplier');
       $margin_fnb      = post('margin_fnb');
@@ -539,5 +539,20 @@ $total_pages = (int)ceil($total / $limit);
     <?php include_once __DIR__ . '/../includes/footer.php'; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('input[name="nama"]').forEach(function(input) {
+            input.addEventListener('input', function(e) {
+                let words = e.target.value.toLowerCase().split(' ');
+                for (let i = 0; i < words.length; i++) {
+                    if (words[i].length > 0) {
+                        words[i] = words[i][0].toUpperCase() + words[i].substr(1);
+                    }
+                }
+                e.target.value = words.join(' ');
+            });
+        });
+    });
+    </script>
   </body>
 </html>
