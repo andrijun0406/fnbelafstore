@@ -156,16 +156,11 @@ function berlaku_sd(string $expiredAt): string {
                 <div class="card-body d-flex flex-column">
                   <div class="d-flex justify-content-between align-items-start mb-2">
                     <?php if (!empty($item['foto_path'])): ?>
-    <img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
-<?php else: ?>
-    <div class="text-muted mb-2">[Foto tidak tersedia]</div>
-<?php endif; ?>
-<?php if (!empty($item['foto_path'])): ?>
-    <img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
-<?php else: ?>
-    <div class="text-muted mb-2">[Foto tidak tersedia]</div>
-<?php endif; ?>
-<h3 class="card-title h6 mb-0"><?= htmlspecialchars($item['produk_nama']) ?></h3>
+                      <img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
+                    <?php else: ?>
+                      <div class="text-muted mb-2">[Foto tidak tersedia]</div>
+                    <?php endif; ?>
+                    <h3 class="card-title h6 mb-0"><?= htmlspecialchars($item['produk_nama']) ?></h3>
                     <span class="badge text-bg-<?= jenis_badge($item['jenis']) ?>"><?= htmlspecialchars($item['jenis']) ?></span>
                   </div>
                   <div class="text-muted mb-2">Supplier: <?= htmlspecialchars($item['supplier_nama']) ?></div>
@@ -212,16 +207,11 @@ function berlaku_sd(string $expiredAt): string {
                 <div class="card-body d-flex flex-column">
                   <div class="d-flex justify-content-between align-items-start mb-2">
                     <?php if (!empty($item['foto_path'])): ?>
-    <img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
-<?php else: ?>
-    <div class="text-muted mb-2">[Foto tidak tersedia]</div>
-<?php endif; ?>
-<?php if (!empty($item['foto_path'])): ?>
-    <img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
-<?php else: ?>
-    <div class="text-muted mb-2">[Foto tidak tersedia]</div>
-<?php endif; ?>
-<h3 class="card-title h6 mb-0"><?= htmlspecialchars($item['produk_nama']) ?></h3>
+                        <img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
+                    <?php else: ?>
+                        <div class="text-muted mb-2">[Foto tidak tersedia]</div>
+                    <?php endif; ?>
+                    <h3 class="card-title h6 mb-0"><?= htmlspecialchars($item['produk_nama']) ?></h3>
                     <span class="badge text-bg-<?= jenis_badge($item['jenis']) ?>"><?= htmlspecialchars($item['jenis']) ?></span>
                   </div>
                   <div class="text-muted mb-2">Supplier: <?= htmlspecialchars($item['supplier_nama']) ?></div>
