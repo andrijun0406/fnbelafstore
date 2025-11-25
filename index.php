@@ -21,9 +21,9 @@ $stmtToday = $conn->prepare("
   SELECT st.id AS stok_id,
          p.id AS produk_id,
          p.nama AS produk_nama,
-         p.jenis,
+         p.foto_path,
+        p.jenis,
          p.harga_jual,
-            p.foto_path,
          s.nama AS supplier_nama,
          st.jumlah_masuk,
          st.expired_at,
@@ -48,9 +48,9 @@ $stmtCarry = $conn->prepare("
   SELECT st.id AS stok_id,
          p.id AS produk_id,
          p.nama AS produk_nama,
-         p.jenis,
+         p.foto_path,
+        p.jenis,
          p.harga_jual,
-            p.foto_path,
          s.nama AS supplier_nama,
          st.jumlah_masuk,
          st.expired_at,
@@ -83,6 +83,18 @@ function jenis_badge(string $jenis): string {
 // Berlaku s.d. = expired_at - 1 hari (tanggal terakhir boleh jual)
 function berlaku_sd(string $expiredAt): string {
   return date('Y-m-d', strtotime($expiredAt.' -1 day'));
+}
+
+// Hitung total stok (hari ini + carry-over)
+function total_stok_produk(int $produkId, array $stokToday, array $stokCarry): int {
+    $total = 0;
+    foreach ($stokToday as $st) {
+        if ((int)$st['produk_id'] === $produkId) $total += (int)$st['sisa_hari_ini'];
+    }
+    foreach ($stokCarry as $sc) {
+        if ((int)$sc['produk_id'] === $produkId) $total += (int)$sc['sisa_terkini'];
+    }
+    return $total;
 }
 ?>
 <!doctype html>
@@ -155,15 +167,22 @@ function berlaku_sd(string $expiredAt): string {
               <div class="card shadow-sm h-100">
                 <div class="card-body d-flex flex-column">
                   <div class="d-flex justify-content-between align-items-start mb-2">
-                    <?php if (!empty($item['foto_path'])): ?>
-                      <img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
-                    <?php else: ?>
-                      <div class="text-muted mb-2">[Foto tidak tersedia]</div>
-                    <?php endif; ?>
                     <h3 class="card-title h6 mb-0"><?= htmlspecialchars($item['produk_nama']) ?></h3>
                     <span class="badge text-bg-<?= jenis_badge($item['jenis']) ?>"><?= htmlspecialchars($item['jenis']) ?></span>
                   </div>
-                  <div class="text-muted mb-2">Supplier: <?= htmlspecialchars($item['supplier_nama']) ?></div>
+                  <?php if (!empty($item['foto_path'])): ?>
+<img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
+<?php else: ?>
+<div class="text-muted mb-2">[Foto tidak tersedia]</div>
+<?php endif; ?>
+<?php if (!empty($item['foto_path'])): ?>
+<img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
+<?php else: ?>
+<div class="text-muted mb-2">[Foto tidak tersedia]</div>
+<?php endif; ?>
+<div class="text-muted mb-2">Supplier: <?= htmlspecialchars($item['supplier_nama']) ?></div>
+<p class="mt-2 mb-0 fw-semibold text-primary">Tersedia = <?= total_stok_produk((int)$item['produk_id'], $stok_today, $stok_carry) ?></p>
+<p class="mt-2 mb-0 fw-semibold text-primary">Tersedia = <?= total_stok_produk((int)$item['produk_id'], $stok_today, $stok_carry) ?></p>
                   <div class="mt-auto">
                     <div class="d-flex justify-content-between">
                       <span class="fw-semibold">Harga</span>
@@ -206,15 +225,16 @@ function berlaku_sd(string $expiredAt): string {
               <div class="card shadow-sm h-100">
                 <div class="card-body d-flex flex-column">
                   <div class="d-flex justify-content-between align-items-start mb-2">
-                    <?php if (!empty($item['foto_path'])): ?>
-                        <img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
-                    <?php else: ?>
-                        <div class="text-muted mb-2">[Foto tidak tersedia]</div>
-                    <?php endif; ?>
                     <h3 class="card-title h6 mb-0"><?= htmlspecialchars($item['produk_nama']) ?></h3>
                     <span class="badge text-bg-<?= jenis_badge($item['jenis']) ?>"><?= htmlspecialchars($item['jenis']) ?></span>
                   </div>
-                  <div class="text-muted mb-2">Supplier: <?= htmlspecialchars($item['supplier_nama']) ?></div>
+                  <?php if (!empty($item['foto_path'])): ?>
+<img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
+<?php else: ?>
+<div class="text-muted mb-2">[Foto tidak tersedia]</div>
+<?php endif; ?>
+<div class="text-muted mb-2">Supplier: <?= htmlspecialchars($item['supplier_nama']) ?></div>
+<p class="mt-2 mb-0 fw-semibold text-primary">Tersedia = <?= total_stok_produk((int)$item['produk_id'], $stok_today, $stok_carry) ?></p>
                   <div class="mt-auto">
                     <div class="d-flex justify-content-between">
                       <span class="fw-semibold">Harga</span>
