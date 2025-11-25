@@ -170,20 +170,13 @@ function total_stok_produk(int $produkId, array $stokToday, array $stokCarry): i
                     <h3 class="card-title h6 mb-0"><?= htmlspecialchars($item['produk_nama']) ?></h3>
                     <span class="badge text-bg-<?= jenis_badge($item['jenis']) ?>"><?= htmlspecialchars($item['jenis']) ?></span>
                   </div>
-                  <?php if (!empty($item['foto_path'])): ?>
-<img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
-<?php else: ?>
-<div class="text-muted mb-2">[Foto tidak tersedia]</div>
-<?php endif; ?>
-<?php if (!empty($item['foto_path'])): ?>
-<img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
-<?php else: ?>
-<div class="text-muted mb-2">[Foto tidak tersedia]</div>
-<?php endif; ?>
-<div class="text-muted mb-2">Supplier: <?= htmlspecialchars($item['supplier_nama']) ?></div>
-<p class="mt-2 mb-0 fw-semibold text-primary">Tersedia = <?= total_stok_produk((int)$item['produk_id'], $stok_today, $stok_carry) ?></p>
-<p class="mt-2 mb-0 fw-semibold text-primary">Tersedia = <?= total_stok_produk((int)$item['produk_id'], $stok_today, $stok_carry) ?></p>
-                  <div class="mt-auto">
+                    <?php if (!empty($item['foto_path'])): ?>
+                      <img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
+                    <?php else: ?>
+                      <div class="text-muted mb-2">[Foto tidak tersedia]</div>
+                    <?php endif; ?>
+                      <div class="text-muted mb-2">Supplier: <?= htmlspecialchars($item['supplier_nama']) ?></div>
+                      <p class="mt-2 mb-0 fw-semibold text-primary">Tersedia = <?= total_stok_produk((int)$item['produk_id'], $stok_today, $stok_carry) ?></p>
                     <div class="d-flex justify-content-between">
                       <span class="fw-semibold">Harga</span>
                       <span>Rp <?= number_format((float)$item['harga_jual'], 2, ',', '.') ?></span>
@@ -202,60 +195,6 @@ function total_stok_produk(int $produkId, array $stokToday, array $stokCarry): i
           <?php if ($count_available_today === 0): ?>
             <div class="col-12">
               <div class="alert alert-secondary">Belum ada stok yang tersedia untuk hari ini. Silakan cek kembali nanti.</div>
-            </div>
-          <?php endif; ?>
-        </div>
-      </section>
-
-      <!-- Etalase Carry-over -->
-      <section class="mb-5">
-        <div class="d-flex align-items-center justify-content-between mb-2">
-          <h2 class="h6 mb-0">Tersedia dari Hari Sebelumnya</h2>
-          <span class="text-muted small">Dibawa hingga masa expired</span>
-        </div>
-        <div class="row g-3">
-          <?php
-            $count_carry = 0;
-            foreach ($stok_carry as $item):
-              $sisa = (int)$item['sisa_terkini'];
-              if ($sisa <= 0) { continue; }
-              $count_carry++;
-          ?>
-            <div class="col-12 col-sm-6 col-lg-4">
-              <div class="card shadow-sm h-100">
-                <div class="card-body d-flex flex-column">
-                  <div class="d-flex justify-content-between align-items-start mb-2">
-                    <h3 class="card-title h6 mb-0"><?= htmlspecialchars($item['produk_nama']) ?></h3>
-                    <span class="badge text-bg-<?= jenis_badge($item['jenis']) ?>"><?= htmlspecialchars($item['jenis']) ?></span>
-                  </div>
-                  <?php if (!empty($item['foto_path'])): ?>
-<img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="max-height:120px;border-radius:8px;">
-<?php else: ?>
-<div class="text-muted mb-2">[Foto tidak tersedia]</div>
-<?php endif; ?>
-<div class="text-muted mb-2">Supplier: <?= htmlspecialchars($item['supplier_nama']) ?></div>
-<p class="mt-2 mb-0 fw-semibold text-primary">Tersedia = <?= total_stok_produk((int)$item['produk_id'], $stok_today, $stok_carry) ?></p>
-                  <div class="mt-auto">
-                    <div class="d-flex justify-content-between">
-                      <span class="fw-semibold">Harga</span>
-                      <span>Rp <?= number_format((float)$item['harga_jual'], 2, ',', '.') ?></span>
-                    </div>
-                    <div class="d-flex justify-content-between">
-                      <span class="fw-semibold">Tersedia</span>
-                      <span><?= $sisa ?></span>
-                    </div>
-                    <small class="text-muted">
-                      Berlaku s.d.: <?= htmlspecialchars(berlaku_sd($item['expired_at'])) ?><?= $item['terakhir_diproses'] ? ' • update: ' . htmlspecialchars($item['terakhir_diproses']) : '' ?>
-                    </small>
-                  </div>
-                </div>
-              </div>
-            </div>
-          <?php endforeach; ?>
-
-          <?php if ($count_carry === 0): ?>
-            <div class="col-12">
-              <div class="alert alert-secondary">Tidak ada stok yang dibawa dari hari sebelumnya.</div>
             </div>
           <?php endif; ?>
         </div>
