@@ -159,9 +159,7 @@ function berlaku_sd(string $expiredAt): string {
                     <span class="badge text-bg-<?= jenis_badge($item['jenis']) ?>"><?= htmlspecialchars($item['jenis']) ?></span>
                   </div>
                   <?php if (!empty($item['foto_path'])): ?>
-                    <div class="mb-2" style="text-align:left;">
                       <img src="<?= htmlspecialchars($item['foto_path']) ?>" alt="<?= htmlspecialchars($item['produk_nama']) ?>" class="img-fluid mb-2" style="width:100%;max-height:120px;object-fit:contain;border-radius:8px;">
-                    </div>
                     <?php else: ?>
                   <div class="text-muted mb-2">[Foto tidak tersedia]</div>
                   <?php endif; ?>
